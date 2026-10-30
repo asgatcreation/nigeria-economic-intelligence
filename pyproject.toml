@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nigeria-economic-intelligence"
+version = "0.1.0"
+description = "Nigeria economic and labour market intelligence data platform"
+requires-python = ">=3.12"
+dependencies = [
+    "SQLAlchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pandas>=2.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+analysis = [
+    "numpy>=2.0",
+    "matplotlib>=3.9",
+    "statsmodels>=0.14",
+    "scikit-learn>=1.5",
+    "jupyterlab>=4.2",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+nei-ingest = "nigeria_economic_intelligence.ingestion:main"
+nei-migrate = "nigeria_economic_intelligence.migrate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+markers = [
+    "database: test requires a running PostgreSQL instance",
+]
