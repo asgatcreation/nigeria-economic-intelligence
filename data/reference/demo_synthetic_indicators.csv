@@ -1,0 +1,3 @@
+source_code,source_name,organization,geo_code,geo_name,geo_level,indicator_code,indicator_name,domain,indicator_unit,frequency,period_start,period_end,value,observation_status,notes
+SYNTHETIC_DEMO,Synthetic pipeline test data,Internal test,NG-TEST,Test geography,other,DEMO_INFLATION,Demo inflation indicator,prices,percent,monthly,2026-01-01,2026-01-31,12.5,observed,Fictional value for pipeline testing only
+SYNTHETIC_DEMO,Synthetic pipeline test data,Internal test,NG-TEST,Test geography,other,DEMO_INFLATION,Demo inflation indicator,prices,percent,monthly,2026-02-01,2026-02-28,12.8,observed,Fictional value for pipeline testing only
