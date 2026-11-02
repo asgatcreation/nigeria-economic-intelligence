@@ -11,13 +11,34 @@ Nigeria's economic and labour-market indicators.
 - SQL for data querying and analytical transformations
 - Docker for isolated database infrastructure
 
+## Findings
+
+**[Read the analysis: Nigeria — growth, prices and the labour market,
+1991–2025](reports/nigeria_economic_findings.md)**
+
+486 observations across 14 indicators. The headline results:
+
+- Income per person **peaked in 2015** and is still 8.4% below it a decade
+  later.
+- Measured unemployment of 3.1% sits alongside **66.5% vulnerable
+  employment** — in Nigeria, job quality rather than joblessness is the
+  binding constraint, and the unemployment rate is close to uninformative.
+- Labour left agriculture for services while manufacturing's share of
+  output fell from 19.5% to 8.3% of GDP: structural change without
+  industrialisation.
+
+Every number in the report is computed from the warehouse by
+[`analysis.py`](src/nigeria_economic_intelligence/analysis.py) and
+reproducible with one command. Nothing is hand-entered.
+
 ## Project status
 
-The ingestion pipeline is complete: validated CSV imports are recorded as
-tracked batches, every value change is captured in a revision history, and
-schema changes are applied through a migration ledger. No real economic data
-has been loaded yet — the only data in the repository is a clearly labelled
-synthetic file used to exercise the pipeline.
+The pipeline is complete and loaded with real data. Validated imports are
+recorded as tracked batches, every value change is captured in a revision
+history, and schema changes are applied through a migration ledger.
+
+Sub-national data is the main gap: the schema supports state and LGA
+geography, but only national-level indicators have been loaded so far.
 
 ## Getting started
 
@@ -104,6 +125,37 @@ python -m nigeria_economic_intelligence.ingestion path/to/file.csv
 
 See `data/reference/demo_synthetic_indicators.csv` for a working example.
 
+### Loading real data
+
+The World Bank connector fetches Nigeria indicators and writes them in the
+format above, so the import goes through the same validation, transactions
+and batch tracking as any other file:
+
+```bash
+# Fetch to data/raw/ and import in one step
+python -m nigeria_economic_intelligence.sources.worldbank --ingest
+
+# Or fetch only, to inspect the CSV first
+python -m nigeria_economic_intelligence.sources.worldbank
+```
+
+Seven of the fourteen series are ILO *modelled* estimates rather than
+Nigerian survey results. Those are stored with
+`observation_status = 'estimated'` and a note recording that they are not
+comparable with NBS published figures, so the distinction lives in the data
+rather than only in documentation.
+
+## Running the analysis
+
+```bash
+python -m nigeria_economic_intelligence.analysis            # print findings
+python -m nigeria_economic_intelligence.analysis --figures  # and write charts
+```
+
+Findings are read from the warehouse by SQL and computed in code, so the
+report regenerates after any re-import. Figures are written to
+`reports/figures/`.
+
 ### How an import behaves
 
 Validation is all-or-nothing: a single bad row rejects the whole file, and
@@ -143,9 +195,10 @@ data/processed/   derived datasets, not committed
 docs/             written analysis and documentation
 notebooks/        exploratory Jupyter notebooks
 r/                R scripts for statistical modelling
-reports/          generated output
+reports/          the written analysis and its figures
 sql/              numbered migrations
 src/              the nigeria_economic_intelligence package
+src/.../sources/  connectors that fetch from external publishers
 tests/            pytest suite and an R connectivity check
 ```
 
