@@ -97,10 +97,15 @@ def growth_findings(data: pd.DataFrame) -> dict:
     }
 
 
-def price_findings(data: pd.DataFrame) -> dict:
-    """Inflation level and recent acceleration."""
+def price_findings(data: pd.DataFrame, recent_years: int = 10) -> dict:
+    """Inflation level and recent acceleration.
+
+    The recent window is relative to the end of the series rather than a
+    fixed year, so the function does not silently break on a shorter or
+    older series.
+    """
     inflation = data["NGA_INFLATION_CPI"].dropna()
-    recent = inflation.loc[2015:]
+    recent = inflation.loc[int(inflation.index[-1]) - recent_years:]
 
     return {
         "latest_year": int(inflation.index[-1]),
@@ -509,12 +514,17 @@ def figure_manufacturing(findings: dict) -> Path:
     )
 
     axes.annotate(
-        f"{series.index[0]}  {findings['manufacturing_first']:.1f}%",
-        xy=(series.index[0], findings["manufacturing_first"]),
-        xytext=(6, 4),
+        f"{findings['manufacturing_last_year']}  "
+        f"{findings['manufacturing_last']:.1f}%",
+        xy=(
+            findings["manufacturing_last_year"],
+            findings["manufacturing_last"],
+        ),
+        xytext=(-8, 12),
         textcoords="offset points",
         fontsize=9,
         color=INK,
+        ha="right",
     )
     axes.annotate(
         f"{findings['manufacturing_trough_year']} trough  "
