@@ -13,10 +13,11 @@ Nigeria's economic and labour-market indicators.
 
 ## Findings
 
-**[Read the analysis: Nigeria — growth, prices and the labour market,
+**[Read the analysis: Nigeria — growth, prices, work and population,
 1991–2025](reports/nigeria_economic_findings.md)**
 
-486 observations across 14 indicators. The headline results:
+708 observations across 20 indicators, national and for all 36 states
+plus the FCT. The headline results:
 
 - Income per person **peaked in 2015** and is still 8.4% below it a decade
   later.
@@ -26,6 +27,9 @@ Nigeria's economic and labour-market indicators.
 - Labour left agriculture for services while manufacturing's share of
   output fell from 19.5% to 8.3% of GDP: structural change without
   industrialisation.
+- **Age dependency splits the country**: each 100 working-age people
+  support 60 dependants in Lagos but 107 in Bauchi, so the national
+  averages describe no actual state well.
 
 Every number in the report is computed from the warehouse by
 [`analysis.py`](src/nigeria_economic_intelligence/analysis.py) and
@@ -37,8 +41,11 @@ The pipeline is complete and loaded with real data. Validated imports are
 recorded as tracked batches, every value change is captured in a revision
 history, and schema changes are applied through a migration ledger.
 
-Sub-national data is the main gap: the schema supports state and LGA
-geography, but only national-level indicators have been loaded so far.
+State-level data is loaded for all 36 states and the FCT, arranged under
+the six geopolitical zones. The remaining gap is state *economic* data:
+the NBS publishes state GDP, poverty and unemployment as PDF reports
+rather than in machine-readable form, so only demographic structure is
+available at that level.
 
 ## Getting started
 
@@ -132,8 +139,11 @@ format above, so the import goes through the same validation, transactions
 and batch tracking as any other file:
 
 ```bash
-# Fetch to data/raw/ and import in one step
+# National indicators from the World Bank
 python -m nigeria_economic_intelligence.sources.worldbank --ingest
+
+# State population structure for all 37 states, from HDX
+python -m nigeria_economic_intelligence.sources.hdx_population --ingest
 
 # Or fetch only, to inspect the CSV first
 python -m nigeria_economic_intelligence.sources.worldbank
@@ -185,6 +195,10 @@ the change. Manual updates outside an import are still recorded, with a null
 | `indicator_observation_revisions` | Audit trail of every value, unit, status, or note change |
 | `data_import_batches` | One row per ingestion attempt, with row counts and outcome |
 | `schema_migrations` | Which migration files have been applied, with checksums |
+
+Geography is hierarchical: the 37 states hang off six geopolitical zones,
+which hang off the country, so state observations roll up to zone and
+national level by walking `parent_id`.
 
 ## Repository layout
 

@@ -1,6 +1,6 @@
-# Nigeria: growth, prices and the labour market, 1991–2025
+# Nigeria: growth, prices, work and population, 1991–2025
 
-An analysis of 486 observations across 14 indicators, read from the
+An analysis of 708 observations across 20 indicators, read from the
 project's PostgreSQL warehouse. Every figure quoted below is computed by
 [`analysis.py`](../src/nigeria_economic_intelligence/analysis.py) from
 SQL against that warehouse, not transcribed by hand, and can be
@@ -10,7 +10,7 @@ reproduced with one command.
 
 ## Summary
 
-Four findings, in descending order of how much they change the picture:
+Five findings, in descending order of how much they change the picture:
 
 1. **Income per person peaked in 2015 and has not recovered.** At $2,369
    (constant 2015 US$) in 2025, GDP per capita is **8.4% below** its
@@ -24,7 +24,12 @@ Four findings, in descending order of how much they change the picture:
    employment share fell 20.3 points since 1991 while manufacturing's
    share of output fell from 19.5% to 8.3% of GDP — structural change
    without industrialisation.
-4. **Oil's measured share of output has collapsed** from 28.7% of GDP
+4. **Age dependency splits the country.** Each 100 working-age
+   people support 60 dependants in Lagos but 107 in Bauchi. The
+   North West holds both the largest workforce and the heaviest
+   dependency burden, so national averages describe no actual state
+   well.
+5. **Oil's measured share of output has collapsed** from 28.7% of GDP
    (1993) to 6.2% (2021), and correlates only weakly with growth
    (r = 0.12). This is a genuine finding about the *rents* measure, and
    emphatically **not** evidence that oil no longer matters — see the
@@ -36,10 +41,11 @@ Four findings, in descending order of how much they change the picture:
 
 | | |
 |---|---|
-| **Source** | World Bank, World Development Indicators (API v2) |
-| **Geography** | Nigeria, national level |
-| **Period** | 1991–2025 (oil rents to 2021) |
-| **Observations** | 486 across 14 indicators |
+| **National source** | World Bank, World Development Indicators (API v2) |
+| **State source** | COD-PS Nigeria 2022 (UNFPA / US Census Bureau), via HDX |
+| **Geography** | Nigeria national; 36 states and the FCT, grouped into 6 zones |
+| **Period** | 1991–2025 national (oil rents to 2021); 2022 state |
+| **Observations** | 708 across 20 indicators (excludes the 2 synthetic demo rows) |
 | **Retrieved** | 2 November 2026 |
 
 Data is fetched by a connector that writes a CSV in the project's
@@ -200,6 +206,46 @@ does not track annual growth.* Testing oil dependence properly requires
 fiscal and external-sector data this analysis does not have. That is a
 stated gap, not a finding.
 
+## 6. The north–south demographic divide
+
+Everything above is national, and national figures conceal a split that
+matters for every labour-market conclusion in this report.
+
+![Age dependency ratio by state](figures/07_state_dependency_ratio.png)
+
+The **age dependency ratio** — how many children and elderly each 100
+working-age people support — ranges from **60.5 in Lagos to 107.2 in
+Bauchi**. Five states (Bauchi, Jigawa, Katsina, Sokoto, Zamfara) are
+above 100: in those states the working-age population is *outnumbered*
+by the people it supports.
+
+By geopolitical zone:
+
+| Zone | Population | Working age (15–64) | Dependency ratio |
+|---|---:|---:|---:|
+| North West | 60.2m | 30.7m | **97.8** |
+| North East | 30.5m | 16.1m | 89.0 |
+| South East | 23.5m | 13.0m | 82.0 |
+| North Central | 31.6m | 17.9m | 76.4 |
+| South West | 41.2m | 24.3m | 72.2 |
+| South South | 29.8m | 17.5m | **71.2** |
+
+![Working-age population by zone](figures/08_zone_working_age.png)
+
+The North West holds Nigeria's **largest workforce (30.7m)** and its
+**heaviest dependency burden (97.8)** simultaneously. A worker there
+supports roughly one dependant; a worker in the South South supports
+about 0.71.
+
+**Why this matters for the earlier findings.** The vulnerable-employment
+and per-capita-income results are national averages applied to a country
+whose regions face materially different arithmetic. The same national
+income per head stretches much further in Lagos than in Bauchi, because
+it is divided across fewer dependants. Any policy inference drawn from
+the national figures alone — on job creation, schooling or social
+protection — is being drawn from an average that describes no actual
+state very well.
+
 ---
 
 ## Limitations
@@ -213,15 +259,27 @@ Stated plainly, because they bound every conclusion above:
    recent year or two are frequently revised. The 2025 figures should be
    treated as provisional. The warehouse's revision history will capture
    any change on re-import.
-3. **National level only.** All data is national. Nigeria's economic and
-   labour-market conditions vary enormously across states and zones, and
-   none of that variation is visible here. The schema supports
-   sub-national geography; the data does not yet exist in it.
-4. **Annual frequency.** Annual data cannot resolve the within-year
+3. **State data is demographic, not economic.** State-level GDP,
+   poverty and unemployment are published by the NBS as PDF reports,
+   not in machine-readable form, and no reliable open API carries
+   them. So the state analysis characterises *who lives where and at
+   what age*, and cannot speak to state economic output directly.
+4. **State figures are projections, not a count.** Nigeria's last
+   census was in 2006; all current state populations are projected
+   forward from it and stored as `'estimated'`. State population
+   figures in Nigeria carry political weight — they feed revenue
+   allocation and constituency delimitation — which is a reason to
+   treat the precision of any single state's figure with care.
+5. **Published age bands do not sum exactly to published totals.**
+   In the source, the five-year bands differ from the stated total by
+   up to 0.17 percentage points. Shares computed here use the
+   published total as denominator and so inherit that discrepancy;
+   the dependency ratio, being band-over-band, does not.
+6. **Annual frequency.** Annual data cannot resolve the within-year
    dynamics that matter for inflation and FX.
-5. **Correlation only.** Section 5 reports a correlation. No causal
+7. **Correlation only.** Section 5 reports a correlation. No causal
    claim is made or supported anywhere in this analysis.
-6. **Single source.** Everything here is World Bank WDI. Cross-checking
+8. **Cross-checking.** The national series are World Bank WDI only. Cross-checking
    against NBS and CBN publications would strengthen it considerably and
    is the obvious next step.
 
@@ -231,8 +289,9 @@ Stated plainly, because they bound every conclusion above:
 docker compose up -d
 python -m nigeria_economic_intelligence.migrate up
 python -m nigeria_economic_intelligence.sources.worldbank --ingest
+python -m nigeria_economic_intelligence.sources.hdx_population --ingest
 python -m nigeria_economic_intelligence.analysis --figures
 ```
 
 `analysis.py --figures` prints every number quoted in this report and
-regenerates all six figures. Nothing in this document is hand-entered.
+regenerates all eight figures. Nothing in this document is hand-entered.

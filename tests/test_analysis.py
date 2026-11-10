@@ -151,3 +151,32 @@ def test_findings_run_against_live_data():
     assert 0 < labour["vulnerable"] <= 100
     assert 0 < labour["unemployment"] <= 100
     assert structure["agriculture_shift"] < 0
+
+
+def test_load_states_returns_all_states_with_zones():
+    states = analysis.load_states()
+
+    assert len(states) == 37
+    assert states["zone"].nunique() == 6
+    assert states["state_code"].is_unique
+
+
+def test_state_findings_identify_the_dependency_spread():
+    states = analysis.load_states()
+    findings = analysis.state_findings(states)
+
+    assert findings["state_count"] == 37
+    assert findings["lowest_value"] < findings["highest_value"]
+    # Every state must land in a plausible demographic range.
+    assert 30 < findings["lowest_value"] < 200
+    assert 30 < findings["highest_value"] < 200
+    assert len(findings["zone_summary"]) == 6
+
+
+def test_state_populations_sum_to_the_national_total():
+    """The state figures must reconcile with the published national one."""
+    states = analysis.load_states()
+    total = states["NGA_STATE_POPULATION"].sum()
+
+    # Roughly 217 million on the 2022 projection.
+    assert 2.0e8 < total < 2.4e8

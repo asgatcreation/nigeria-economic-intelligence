@@ -662,15 +662,261 @@ def main() -> None:
         action="store_true",
         help="Write the report figures to reports/figures/",
     )
+    parser.add_argument(
+        "--national-only",
+        action="store_true",
+        help="Skip the state-level section",
+    )
     args = parser.parse_args()
 
     print_findings()
 
+    if not args.national_only:
+        print()
+        print_state_findings()
+
     if args.figures:
         print("\nFIGURES")
-        for path in build_figures():
+        paths = build_figures()
+        if not args.national_only:
+            paths += build_state_figures()
+        for path in paths:
             print(f"  {path.relative_to(PROJECT_ROOT)}")
 
+
+
+STATE_QUERY = """
+SELECT s.geo_code AS state_code,
+       s.geo_name AS state,
+       z.geo_name AS zone,
+       i.indicator_code AS code,
+       o.value::float AS value
+FROM indicator_observations AS o
+JOIN indicators AS i
+  ON i.indicator_id = o.indicator_id
+JOIN geographies AS s
+  ON s.geography_id = o.geography_id
+JOIN geographies AS z
+  ON z.geography_id = s.parent_id
+WHERE s.geo_level = 'state'
+ORDER BY s.geo_code
+"""
+
+
+def load_states() -> pd.DataFrame:
+    """Return state-level indicators, one row per state."""
+    long_form = pd.read_sql(text(STATE_QUERY), engine)
+
+    if long_form.empty:
+        raise RuntimeError(
+            "No state-level observations found. Load them first with "
+            "python -m nigeria_economic_intelligence.sources."
+            "hdx_population --ingest"
+        )
+
+    wide = long_form.pivot(
+        index=["state_code", "state", "zone"],
+        columns="code",
+        values="value",
+    ).reset_index()
+    wide.columns.name = None
+
+    return wide
+
+
+def state_findings(states: pd.DataFrame) -> dict:
+    """The north-south split in age structure.
+
+    Dependency ratio is the sharpest single summary: it says how many
+    children and elderly each working-age person supports. A ratio above
+    100 means the working-age population is outnumbered by those it
+    supports, which constrains household saving and schooling in a way
+    that income figures alone do not reveal.
+    """
+    by_zone = (
+        states.groupby("zone")
+        .agg(
+            population=("NGA_STATE_POPULATION", "sum"),
+            working_age=("NGA_STATE_WORKING_AGE_POPULATION", "sum"),
+            dependency=("NGA_STATE_DEPENDENCY_RATIO", "mean"),
+            working_age_share=("NGA_STATE_WORKING_AGE_SHARE", "mean"),
+        )
+        .sort_values("dependency", ascending=False)
+    )
+
+    ranked = states.sort_values("NGA_STATE_DEPENDENCY_RATIO")
+    above_100 = states[states["NGA_STATE_DEPENDENCY_RATIO"] > 100]
+
+    return {
+        "state_count": int(len(states)),
+        "total_population": float(states["NGA_STATE_POPULATION"].sum()),
+        "lowest_state": str(ranked.iloc[0]["state"]),
+        "lowest_value": float(
+            ranked.iloc[0]["NGA_STATE_DEPENDENCY_RATIO"]
+        ),
+        "highest_state": str(ranked.iloc[-1]["state"]),
+        "highest_value": float(
+            ranked.iloc[-1]["NGA_STATE_DEPENDENCY_RATIO"]
+        ),
+        "states_above_100": sorted(above_100["state"].tolist()),
+        "zone_summary": by_zone,
+    }
+
+
+def figure_state_dependency(states: pd.DataFrame) -> Path:
+    """Age dependency ratio for every state, ranked."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+
+    ranked = states.sort_values("NGA_STATE_DEPENDENCY_RATIO")
+    values = ranked["NGA_STATE_DEPENDENCY_RATIO"]
+
+    # Sequential: magnitude is the only thing colour encodes here.
+    ramp = LinearSegmentedColormap.from_list(
+        "blues", ["#b5d4f4", "#185fa5"]
+    )
+    spread = values.max() - values.min()
+    colours = [ramp((value - values.min()) / spread) for value in values]
+
+    figure, axes = plt.subplots(figsize=(8, 10))
+    _style_axes(axes, ylabel="")
+    axes.grid(axis="y", visible=False)
+    axes.grid(axis="x", color=GRID, linewidth=1)
+
+    positions = range(len(ranked))
+    axes.barh(positions, values, color=colours, height=0.72, zorder=2)
+
+    axes.set_yticks(list(positions))
+    axes.set_yticklabels(
+        [
+            f"{row.state}  ({row.zone.replace('North', 'N').replace('South', 'S')})"
+            for row in ranked.itertuples()
+        ],
+        fontsize=8,
+    )
+    axes.set_xlabel(
+        "Dependants per 100 people aged 15-64", color=MUTED, fontsize=9
+    )
+    # The 100 line is the point where dependants outnumber workers; the
+    # labelled axis says what it means, so it needs no caption.
+    axes.axvline(100, color=RED, linewidth=1, linestyle="--")
+
+    for position, value in zip(positions, values):
+        axes.annotate(
+            f"{value:.0f}",
+            xy=(value, position),
+            xytext=(4, 0),
+            textcoords="offset points",
+            fontsize=8,
+            color=INK,
+            va="center",
+        )
+
+    axes.set_xlim(0, values.max() * 1.12)
+    axes.set_title(
+        "Age dependency splits Nigeria north from south",
+        color=INK,
+        fontsize=12,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "07_state_dependency_ratio.png")
+
+
+def figure_zone_working_age(findings: dict) -> Path:
+    """Where the working-age population actually is."""
+    import matplotlib.pyplot as plt
+
+    summary = findings["zone_summary"].sort_values("working_age")
+
+    figure, axes = plt.subplots(figsize=(8, 4.5))
+    _style_axes(axes, ylabel="")
+    axes.grid(axis="y", visible=False)
+    axes.grid(axis="x", color=GRID, linewidth=1)
+
+    positions = range(len(summary))
+    millions = summary["working_age"] / 1e6
+
+    axes.barh(positions, millions, color=BLUE, height=0.68, zorder=2)
+    axes.set_yticks(list(positions))
+    axes.set_yticklabels(summary.index, fontsize=9)
+    axes.set_xlabel(
+        "Working-age population, millions (15-64)",
+        color=MUTED,
+        fontsize=9,
+    )
+
+    for position, (value, dependency) in enumerate(
+        zip(millions, summary["dependency"])
+    ):
+        axes.annotate(
+            f"{value:.1f}m   dependency {dependency:.0f}",
+            xy=(value, position),
+            xytext=(6, 0),
+            textcoords="offset points",
+            fontsize=8,
+            color=INK,
+            va="center",
+        )
+
+    axes.set_xlim(0, millions.max() * 1.45)
+    axes.set_title(
+        "The largest workforce carries the heaviest dependency",
+        color=INK,
+        fontsize=12,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "08_zone_working_age.png")
+
+
+def build_state_figures() -> list[Path]:
+    """Produce the state-level figures."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    states = load_states()
+    findings = state_findings(states)
+
+    return [
+        figure_state_dependency(states),
+        figure_zone_working_age(findings),
+    ]
+
+
+def print_state_findings() -> None:
+    """Print the state-level numbers quoted in the report."""
+    states = load_states()
+    findings = state_findings(states)
+
+    print("STATES (2022 projections)")
+    print(
+        f"  {findings['state_count']} states, "
+        f"{findings['total_population']:,.0f} people"
+    )
+    print(
+        f"  lowest dependency:  {findings['lowest_state']} "
+        f"{findings['lowest_value']:.1f}"
+    )
+    print(
+        f"  highest dependency: {findings['highest_state']} "
+        f"{findings['highest_value']:.1f}"
+    )
+    print(
+        f"  states above 100 dependants per 100 workers "
+        f"({len(findings['states_above_100'])}): "
+        f"{', '.join(findings['states_above_100'])}"
+    )
+    print("  by zone:")
+    for zone, row in findings["zone_summary"].iterrows():
+        print(
+            f"    {zone:<14} pop {row['population'] / 1e6:6.1f}m   "
+            f"working age {row['working_age'] / 1e6:6.1f}m   "
+            f"dependency {row['dependency']:5.1f}"
+        )
 
 if __name__ == "__main__":
     main()
