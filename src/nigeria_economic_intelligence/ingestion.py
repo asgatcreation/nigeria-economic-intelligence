@@ -27,9 +27,11 @@ ALLOWED_GEO_LEVELS = {
     "senatorial_district", "other",
 }
 
+# Must match the indicators_domain_check constraint in the database;
+# test_schema_constants reconciles the two.
 ALLOWED_DOMAINS = {
     "economy", "labour_market", "demographics",
-    "prices", "trade", "agriculture", "other",
+    "prices", "trade", "agriculture", "poverty", "other",
 }
 
 ALLOWED_FREQUENCIES = {

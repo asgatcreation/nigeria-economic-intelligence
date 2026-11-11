@@ -14,6 +14,7 @@ levels should not be read as NBS published figures.
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import text
 
@@ -674,12 +675,19 @@ def main() -> None:
     if not args.national_only:
         print()
         print_state_findings()
+        print()
+        print_poverty_findings()
 
     if args.figures:
         print("\nFIGURES")
         paths = build_figures()
         if not args.national_only:
             paths += build_state_figures()
+            paths.append(
+                figure_poverty_vs_dependency(
+                    poverty_findings(load_states())
+                )
+            )
         for path in paths:
             print(f"  {path.relative_to(PROJECT_ROOT)}")
 
@@ -916,6 +924,183 @@ def print_state_findings() -> None:
             f"    {zone:<14} pop {row['population'] / 1e6:6.1f}m   "
             f"working age {row['working_age'] / 1e6:6.1f}m   "
             f"dependency {row['dependency']:5.1f}"
+        )
+
+
+def poverty_findings(states: pd.DataFrame) -> dict:
+    """State poverty, and how it tracks age structure.
+
+    The association with the dependency ratio is strong, but a shared
+    driver explains much of it: high fertility raises the child
+    population, which mechanically raises dependency and is itself
+    associated with poverty. The correlation is therefore evidence that
+    the two describe the same regional divide, not that age structure
+    causes poverty.
+    """
+    from scipy import stats
+
+    paired = states.dropna(
+        subset=["NGA_MPI_HEADCOUNT", "NGA_STATE_DEPENDENCY_RATIO"]
+    )
+
+    pearson, pearson_p = stats.pearsonr(
+        paired["NGA_STATE_DEPENDENCY_RATIO"],
+        paired["NGA_MPI_HEADCOUNT"],
+    )
+    spearman, _ = stats.spearmanr(
+        paired["NGA_STATE_DEPENDENCY_RATIO"],
+        paired["NGA_MPI_HEADCOUNT"],
+    )
+
+    # The pooled correlation can be an artefact of two separated
+    # groups, so test within each before believing it.
+    northern = paired["zone"].str.startswith("North")
+    within = {}
+    for label, group in (
+        ("north", paired[northern]),
+        ("south", paired[~northern]),
+    ):
+        coefficient, probability = stats.pearsonr(
+            group["NGA_STATE_DEPENDENCY_RATIO"],
+            group["NGA_MPI_HEADCOUNT"],
+        )
+        within[label] = {
+            "n": int(len(group)),
+            "r": float(coefficient),
+            "p": float(probability),
+            "mean_headcount": float(group["NGA_MPI_HEADCOUNT"].mean()),
+        }
+
+    ranked = paired.sort_values("NGA_MPI_HEADCOUNT")
+    by_zone = (
+        paired.groupby("zone")["NGA_MPI_HEADCOUNT"]
+        .agg(states="count", mean="mean", lowest="min", highest="max")
+        .sort_values("mean")
+    )
+
+    return {
+        "n": int(len(paired)),
+        "within": within,
+        "lowest_state": str(ranked.iloc[0]["state"]),
+        "lowest": float(ranked.iloc[0]["NGA_MPI_HEADCOUNT"]),
+        "highest_state": str(ranked.iloc[-1]["state"]),
+        "highest": float(ranked.iloc[-1]["NGA_MPI_HEADCOUNT"]),
+        "ratio": float(
+            ranked.iloc[-1]["NGA_MPI_HEADCOUNT"]
+            / ranked.iloc[0]["NGA_MPI_HEADCOUNT"]
+        ),
+        "pearson": float(pearson),
+        "pearson_p": float(pearson_p),
+        "spearman": float(spearman),
+        "zone_summary": by_zone,
+        "paired": paired,
+    }
+
+
+def figure_poverty_vs_dependency(findings: dict) -> Path:
+    """State poverty against age structure."""
+    import matplotlib.pyplot as plt
+
+    paired = findings["paired"]
+    northern = paired["zone"].str.startswith("North")
+
+    figure, axes = plt.subplots(figsize=(8, 5.5))
+    _style_axes(axes, ylabel="Multidimensionally poor (% of population)")
+
+    # Two groups, two marker shapes: identity never rests on colour.
+    for mask, colour, marker, label in (
+        (northern, ORANGE, "o", "Northern zones"),
+        (~northern, BLUE, "s", "Southern zones"),
+    ):
+        subset = paired[mask]
+        axes.scatter(
+            subset["NGA_STATE_DEPENDENCY_RATIO"],
+            subset["NGA_MPI_HEADCOUNT"],
+            color=colour,
+            marker=marker,
+            s=58,
+            edgecolor=SURFACE,
+            linewidth=1.4,
+            zorder=3,
+            label=label,
+        )
+
+    slope, intercept = np.polyfit(
+        paired["NGA_STATE_DEPENDENCY_RATIO"],
+        paired["NGA_MPI_HEADCOUNT"],
+        1,
+    )
+    grid = np.linspace(
+        paired["NGA_STATE_DEPENDENCY_RATIO"].min(),
+        paired["NGA_STATE_DEPENDENCY_RATIO"].max(),
+        50,
+    )
+    axes.plot(grid, slope * grid + intercept, color=MUTED, linewidth=1.5, zorder=2)
+
+    for state in ("Lagos", "Bauchi", "Anambra", "Kaduna"):
+        row = paired[paired["state"] == state]
+        if row.empty:
+            continue
+        axes.annotate(
+            state,
+            (
+                float(row["NGA_STATE_DEPENDENCY_RATIO"].iloc[0]),
+                float(row["NGA_MPI_HEADCOUNT"].iloc[0]),
+            ),
+            xytext=(7, 4),
+            textcoords="offset points",
+            fontsize=8,
+            color=INK,
+        )
+
+    axes.set_xlabel(
+        "Dependants per 100 people aged 15-64", color=MUTED, fontsize=9
+    )
+    axes.legend(frameon=False, fontsize=9, labelcolor=MUTED, loc="upper left")
+    axes.set_title(
+        "Poverty and age structure describe the same divide",
+        color=INK,
+        fontsize=12,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "09_poverty_vs_dependency.png")
+
+
+def print_poverty_findings() -> None:
+    """Print the poverty numbers quoted in the report."""
+    states = load_states()
+
+    if "NGA_MPI_HEADCOUNT" not in states.columns:
+        print("POVERTY: no MPI data loaded.")
+        return
+
+    findings = poverty_findings(states)
+
+    print("POVERTY (OPHI MPI, MICS 2021)")
+    print(
+        f"  headcount ranges {findings['lowest']:.1f}% "
+        f"({findings['lowest_state']}) to {findings['highest']:.1f}% "
+        f"({findings['highest_state']}) - a {findings['ratio']:.0f}x spread"
+    )
+    print(
+        "  vs dependency ratio: pearson "
+        f"{findings['pearson']:.3f} (p={findings['pearson_p']:.1e}), "
+        f"spearman {findings['spearman']:.3f}, n={findings['n']}"
+    )
+    print("  within groups (the pooled figure hides two regimes):")
+    for label, group in findings["within"].items():
+        print(
+            f"    {label:<6} n={group['n']:<3} r={group['r']:+.3f} "
+            f"p={group['p']:.3f}   "
+            f"mean headcount {group['mean_headcount']:.1f}%"
+        )
+    print("  mean headcount by zone:")
+    for zone, row in findings["zone_summary"].iterrows():
+        print(
+            f"    {zone:<14} {row['mean']:5.1f}%   "
+            f"(range {row['lowest']:.1f}-{row['highest']:.1f})"
         )
 
 if __name__ == "__main__":

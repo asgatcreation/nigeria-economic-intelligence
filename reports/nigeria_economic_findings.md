@@ -1,6 +1,6 @@
 # Nigeria: growth, prices, work and population, 1991–2025
 
-An analysis of 708 observations across 20 indicators, read from the
+An analysis of 898 observations across 25 indicators, read from the
 project's PostgreSQL warehouse. Every figure quoted below is computed by
 [`analysis.py`](../src/nigeria_economic_intelligence/analysis.py) from
 SQL against that warehouse, not transcribed by hand, and can be
@@ -10,7 +10,7 @@ reproduced with one command.
 
 ## Summary
 
-Five findings, in descending order of how much they change the picture:
+Six findings, in descending order of how much they change the picture:
 
 1. **Income per person peaked in 2015 and has not recovered.** At $2,369
    (constant 2015 US$) in 2025, GDP per capita is **8.4% below** its
@@ -29,7 +29,11 @@ Five findings, in descending order of how much they change the picture:
    North West holds both the largest workforce and the heaviest
    dependency burden, so national averages describe no actual state
    well.
-5. **Oil's measured share of output has collapsed** from 28.7% of GDP
+5. **State poverty ranges 68-fold**, from 1.1% of people in Lagos to
+   75.4% in Bauchi. It correlates with age dependency at r = 0.81,
+   but that pooled figure hides two regimes: strong inside the north
+   (r = 0.86), absent inside the south (r = 0.07).
+6. **Oil's measured share of output has collapsed** from 28.7% of GDP
    (1993) to 6.2% (2021), and correlates only weakly with growth
    (r = 0.12). This is a genuine finding about the *rents* measure, and
    emphatically **not** evidence that oil no longer matters — see the
@@ -42,10 +46,10 @@ Five findings, in descending order of how much they change the picture:
 | | |
 |---|---|
 | **National source** | World Bank, World Development Indicators (API v2) |
-| **State source** | COD-PS Nigeria 2022 (UNFPA / US Census Bureau), via HDX |
+| **State sources** | COD-PS Nigeria 2022 (UNFPA / US Census Bureau); OPHI global MPI from MICS 2021 — both via HDX |
 | **Geography** | Nigeria national; 36 states and the FCT, grouped into 6 zones |
-| **Period** | 1991–2025 national (oil rents to 2021); 2022 state |
-| **Observations** | 708 across 20 indicators (excludes the 2 synthetic demo rows) |
+| **Period** | 1991–2025 national (oil rents to 2021); 2022 state population; 2021 state poverty |
+| **Observations** | 898 across 25 indicators (excludes the 2 synthetic demo rows) |
 | **Retrieved** | 2 November 2026 |
 
 Data is fetched by a connector that writes a CSV in the project's
@@ -246,6 +250,59 @@ the national figures alone — on job creation, schooling or social
 protection — is being drawn from an average that describes no actual
 state very well.
 
+## 7. State poverty, and a correlation that needs splitting
+
+The state layer is no longer demographic only. OPHI's multidimensional
+poverty results for Nigeria, computed from MICS 2021, are published
+machine-readable at state level and keyed on the same P-codes as the
+geography above.
+
+The MPI counts overlapping deprivations in health, education and living
+standards. A person is *multidimensionally poor* when deprived in at
+least a third of the weighted indicators.
+
+| | Headcount (% poor) |
+|---|---:|
+| Lagos | **1.1** |
+| Anambra | 2.0 |
+| Nigeria (national) | 33.0 |
+| Jigawa | 74.8 |
+| Bauchi | **75.4** |
+
+A **68-fold** gap between the least and most deprived state. By zone the
+mean headcount runs from 6.2% in the South East to 61.6% in the North
+West — a tenfold difference inside one country.
+
+![State poverty against age dependency](figures/09_poverty_vs_dependency.png)
+
+Poverty and age structure track each other closely across the 37
+states: Pearson r = **0.81** (p < 1e-9).
+
+**But that pooled figure should not be quoted on its own.** Splitting
+the states into northern and southern groups changes the picture
+entirely:
+
+| Group | States | r | p | Mean headcount |
+|---|---:|---:|---:|---:|
+| Northern zones | 20 | **+0.86** | <0.001 | 49.0% |
+| Southern zones | 17 | +0.07 | 0.80 | 10.3% |
+
+Inside the north the relationship is strong. Inside the south it does
+not exist at all — southern poverty is uniformly low whatever the
+dependency ratio. Much of the pooled r = 0.81 is therefore the gap
+*between* two groups rather than a single relationship running through
+all 37 states, and the scatter shows exactly that: a flat southern
+cluster and a steep northern one.
+
+**What this does and does not say.** Even the northern relationship is
+not evidence that age structure causes poverty. High fertility raises
+the child population, which mechanically raises the dependency ratio
+and is independently associated with poverty, so a common driver
+explains much of the association. The defensible reading is that
+dependency and deprivation describe the *same* regional divide, and
+that the divide is sharp enough to make national averages misleading
+for either.
+
 ---
 
 ## Limitations
@@ -259,12 +316,13 @@ Stated plainly, because they bound every conclusion above:
    recent year or two are frequently revised. The 2025 figures should be
    treated as provisional. The warehouse's revision history will capture
    any change on re-import.
-3. **State data is demographic, not economic.** State-level GDP,
-   poverty and unemployment are published by the NBS as PDF reports,
-   not in machine-readable form, and no reliable open API carries
-   them. So the state analysis characterises *who lives where and at
-   what age*, and cannot speak to state economic output directly.
-4. **State figures are projections, not a count.** Nigeria's last
+3. **State output data is still missing.** State poverty is now
+   covered, but state GDP, IGR and unemployment are published by the
+   NBS only as PDF reports — its e-library returned HTTP 500 when
+   checked, and its MPI release is at senatorial-district rather
+   than state level. So the state layer describes deprivation and
+   age structure, not output.
+4. **State population figures are projections, not a count.** Nigeria's last
    census was in 2006; all current state populations are projected
    forward from it and stored as `'estimated'`. State population
    figures in Nigeria carry political weight — they feed revenue
@@ -275,11 +333,15 @@ Stated plainly, because they bound every conclusion above:
    up to 0.17 percentage points. Shares computed here use the
    published total as denominator and so inherit that discrepancy;
    the dependency ratio, being band-over-band, does not.
-6. **Annual frequency.** Annual data cannot resolve the within-year
+6. **Poverty and population come from different surveys.** The MPI
+   is MICS 2021; the population structure is a 2022 projection.
+   Comparing them assumes state age structure did not shift
+   materially in a year, which is reasonable but not free.
+7. **Annual frequency.** Annual data cannot resolve the within-year
    dynamics that matter for inflation and FX.
-7. **Correlation only.** Section 5 reports a correlation. No causal
+8. **Correlation only.** Sections 5 and 7 report a correlation. No causal
    claim is made or supported anywhere in this analysis.
-8. **Cross-checking.** The national series are World Bank WDI only. Cross-checking
+9. **Cross-checking.** The national series are World Bank WDI only. Cross-checking
    against NBS and CBN publications would strengthen it considerably and
    is the obvious next step.
 
@@ -290,8 +352,9 @@ docker compose up -d
 python -m nigeria_economic_intelligence.migrate up
 python -m nigeria_economic_intelligence.sources.worldbank --ingest
 python -m nigeria_economic_intelligence.sources.hdx_population --ingest
+python -m nigeria_economic_intelligence.sources.ophi_mpi --ingest
 python -m nigeria_economic_intelligence.analysis --figures
 ```
 
 `analysis.py --figures` prints every number quoted in this report and
-regenerates all eight figures. Nothing in this document is hand-entered.
+regenerates all nine figures. Nothing in this document is hand-entered.

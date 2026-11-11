@@ -180,3 +180,44 @@ def test_state_populations_sum_to_the_national_total():
 
     # Roughly 217 million on the 2022 projection.
     assert 2.0e8 < total < 2.4e8
+
+
+def test_poverty_findings_cover_every_state():
+    states = analysis.load_states()
+    findings = analysis.poverty_findings(states)
+
+    assert findings["n"] == 37
+    assert 0 <= findings["lowest"] < findings["highest"] <= 100
+    assert findings["ratio"] > 1
+
+
+def test_poverty_findings_split_north_from_south():
+    """The pooled correlation hides two regimes; both must be reported."""
+    findings = analysis.poverty_findings(analysis.load_states())
+
+    assert set(findings["within"]) == {"north", "south"}
+    assert (
+        findings["within"]["north"]["n"]
+        + findings["within"]["south"]["n"]
+        == 37
+    )
+    for group in findings["within"].values():
+        assert -1.0 <= group["r"] <= 1.0
+        assert 0.0 <= group["p"] <= 1.0
+
+
+def test_poverty_is_higher_in_the_north():
+    findings = analysis.poverty_findings(analysis.load_states())
+
+    assert (
+        findings["within"]["north"]["mean_headcount"]
+        > findings["within"]["south"]["mean_headcount"]
+    )
+
+
+def test_national_poverty_row_is_not_in_the_state_frame():
+    """The country-level MPI row must not be counted as a state."""
+    states = analysis.load_states()
+
+    assert "Nigeria" not in set(states["state"])
+    assert len(states) == 37

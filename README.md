@@ -16,7 +16,7 @@ Nigeria's economic and labour-market indicators.
 **[Read the analysis: Nigeria — growth, prices, work and population,
 1991–2025](reports/nigeria_economic_findings.md)**
 
-708 observations across 20 indicators, national and for all 36 states
+898 observations across 25 indicators, national and for all 36 states
 plus the FCT. The headline results:
 
 - Income per person **peaked in 2015** and is still 8.4% below it a decade
@@ -30,6 +30,11 @@ plus the FCT. The headline results:
 - **Age dependency splits the country**: each 100 working-age people
   support 60 dependants in Lagos but 107 in Bauchi, so the national
   averages describe no actual state well.
+- **State poverty ranges 68-fold**, 1.1% of people in Lagos to 75.4%
+  in Bauchi. It tracks age dependency at r = 0.81 — but that splits
+  into a strong northern relationship (r = 0.86) and no southern one
+  (r = 0.07), which the report spells out rather than quoting the
+  pooled figure alone.
 
 Every number in the report is computed from the warehouse by
 [`analysis.py`](src/nigeria_economic_intelligence/analysis.py) and
@@ -41,11 +46,11 @@ The pipeline is complete and loaded with real data. Validated imports are
 recorded as tracked batches, every value change is captured in a revision
 history, and schema changes are applied through a migration ledger.
 
-State-level data is loaded for all 36 states and the FCT, arranged under
-the six geopolitical zones. The remaining gap is state *economic* data:
-the NBS publishes state GDP, poverty and unemployment as PDF reports
-rather than in machine-readable form, so only demographic structure is
-available at that level.
+State-level data covers all 36 states and the FCT, arranged under the six
+geopolitical zones: population structure and multidimensional poverty.
+The remaining gap is state *output* data — GDP, internally generated
+revenue and unemployment are published by the NBS only as PDF reports,
+so extracting them is a document-parsing problem rather than an API call.
 
 ## Getting started
 
@@ -144,6 +149,9 @@ python -m nigeria_economic_intelligence.sources.worldbank --ingest
 
 # State population structure for all 37 states, from HDX
 python -m nigeria_economic_intelligence.sources.hdx_population --ingest
+
+# State multidimensional poverty, from OPHI via HDX
+python -m nigeria_economic_intelligence.sources.ophi_mpi --ingest
 
 # Or fetch only, to inspect the CSV first
 python -m nigeria_economic_intelligence.sources.worldbank
