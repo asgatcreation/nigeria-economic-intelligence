@@ -155,6 +155,19 @@ Nigerian survey results. Those are stored with
 comparable with NBS published figures, so the distinction lives in the data
 rather than only in documentation.
 
+## Exploratory notebook
+
+[`notebooks/01_exploratory_analysis.ipynb`](notebooks/01_exploratory_analysis.ipynb)
+goes beyond the written report: it queries the warehouse's provenance
+structure directly, tests the national series for stationarity, and
+re-examines the inflation/income relationship on a basis the data
+actually supports. It is committed with its outputs, so it reads on
+GitHub without being run.
+
+```bash
+jupyter lab notebooks/01_exploratory_analysis.ipynb
+```
+
 ## Running the analysis
 
 ```bash
@@ -207,7 +220,7 @@ data/reference/   synthetic data committed to the repository
 data/raw/         source files, not committed
 data/processed/   derived datasets, not committed
 docs/             written analysis and documentation
-notebooks/        exploratory Jupyter notebooks
+notebooks/        exploratory Jupyter notebooks (committed with outputs)
 r/                R scripts for statistical modelling
 reports/          the written analysis and its figures
 sql/              numbered migrations
