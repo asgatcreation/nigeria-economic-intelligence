@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 analysis = [
     "numpy>=2.0",
+    "scipy>=1.13",
     "matplotlib>=3.9",
     "statsmodels>=0.14",
     "scikit-learn>=1.5",
@@ -39,4 +40,5 @@ python_files = ["test_*.py"]
 addopts = "-q"
 markers = [
     "database: test requires a running PostgreSQL instance",
+    "warehouse: test asserts on loaded published data, not just the schema",
 ]

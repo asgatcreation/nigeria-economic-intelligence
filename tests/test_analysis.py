@@ -3,6 +3,11 @@
 The findings functions are tested against a constructed frame with known
 answers rather than against live data, so a failure points at the
 calculation rather than at a World Bank revision.
+
+The tests marked `warehouse` are the exception: they assert on the loaded
+published values and so need a warehouse with the real imports applied.
+CI runs against an empty schema and deselects them with
+`-m "not warehouse"`; run the full suite locally after ingesting.
 """
 
 import pandas as pd
@@ -123,6 +128,7 @@ def test_structure_findings_correlation_is_finite(frame):
     assert -1.0 <= result["oil_growth_correlation"] <= 1.0
 
 
+@pytest.mark.warehouse
 def test_load_indicators_returns_real_annual_series():
     """Integration check against the live warehouse."""
     data = analysis.load_indicators()
@@ -139,6 +145,7 @@ def test_load_indicators_returns_real_annual_series():
         assert data[code].notna().sum() > 20
 
 
+@pytest.mark.warehouse
 def test_findings_run_against_live_data():
     """The report's numbers must still compute from the warehouse."""
     data = analysis.load_indicators()
@@ -153,6 +160,7 @@ def test_findings_run_against_live_data():
     assert structure["agriculture_shift"] < 0
 
 
+@pytest.mark.warehouse
 def test_load_states_returns_all_states_with_zones():
     states = analysis.load_states()
 
@@ -161,6 +169,7 @@ def test_load_states_returns_all_states_with_zones():
     assert states["state_code"].is_unique
 
 
+@pytest.mark.warehouse
 def test_state_findings_identify_the_dependency_spread():
     states = analysis.load_states()
     findings = analysis.state_findings(states)
@@ -173,6 +182,7 @@ def test_state_findings_identify_the_dependency_spread():
     assert len(findings["zone_summary"]) == 6
 
 
+@pytest.mark.warehouse
 def test_state_populations_sum_to_the_national_total():
     """The state figures must reconcile with the published national one."""
     states = analysis.load_states()
@@ -182,6 +192,7 @@ def test_state_populations_sum_to_the_national_total():
     assert 2.0e8 < total < 2.4e8
 
 
+@pytest.mark.warehouse
 def test_poverty_findings_cover_every_state():
     states = analysis.load_states()
     findings = analysis.poverty_findings(states)
@@ -191,6 +202,7 @@ def test_poverty_findings_cover_every_state():
     assert findings["ratio"] > 1
 
 
+@pytest.mark.warehouse
 def test_poverty_findings_split_north_from_south():
     """The pooled correlation hides two regimes; both must be reported."""
     findings = analysis.poverty_findings(analysis.load_states())
@@ -206,6 +218,7 @@ def test_poverty_findings_split_north_from_south():
         assert 0.0 <= group["p"] <= 1.0
 
 
+@pytest.mark.warehouse
 def test_poverty_is_higher_in_the_north():
     findings = analysis.poverty_findings(analysis.load_states())
 
@@ -215,9 +228,38 @@ def test_poverty_is_higher_in_the_north():
     )
 
 
+@pytest.mark.warehouse
 def test_national_poverty_row_is_not_in_the_state_frame():
     """The country-level MPI row must not be counted as a state."""
     states = analysis.load_states()
 
     assert "Nigeria" not in set(states["state"])
     assert len(states) == 37
+
+
+@pytest.mark.warehouse
+def test_poverty_separation_counts_the_group_overlap():
+    """The report quotes this count, so it must be computed, not typed."""
+    findings = analysis.poverty_findings(analysis.load_states())
+    gap = findings["separation"]
+
+    assert gap["northern_n"] == findings["within"]["north"]["n"]
+    assert 0 <= gap["northern_above_every_southern_state"] <= gap["northern_n"]
+
+    # Every northern state not counted as above must be listed by name.
+    assert len(gap["northern_inside_southern_range"]) == (
+        gap["northern_n"] - gap["northern_above_every_southern_state"]
+    )
+    for _, value in gap["northern_inside_southern_range"]:
+        assert value <= gap["southern_max"]
+
+    assert gap["northern_median"] > gap["southern_median"]
+
+
+@pytest.mark.warehouse
+def test_poverty_findings_report_rank_correlation_per_group():
+    """Pearson alone cannot rule out a monotone relationship."""
+    findings = analysis.poverty_findings(analysis.load_states())
+
+    for group in findings["within"].values():
+        assert -1.0 <= group["rho"] <= 1.0

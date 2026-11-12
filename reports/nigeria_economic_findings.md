@@ -12,14 +12,14 @@ reproduced with one command.
 
 Six findings, in descending order of how much they change the picture:
 
-1. **Income per person peaked in 2015 and has not recovered.** At $2,369
+1. **GDP per capita peaked in 2015 and has not recovered.** At $2,369
    (constant 2015 US$) in 2025, GDP per capita is **8.4% below** its
    2015 peak of $2,586 — a decade without progress in average living
    standards.
 2. **Unemployment is the wrong indicator for Nigeria.** A measured
    unemployment rate of 3.1% sits alongside **66.5% vulnerable
-   employment**. The binding constraint is job *quality*, not job
-   scarcity.
+   employment**. One reading is that the binding constraint here is job
+   *quality* rather than job scarcity.
 3. **Labour left agriculture for services, not industry.** Agriculture's
    employment share fell 20.3 points since 1991 while manufacturing's
    share of output fell from 19.5% to 8.3% of GDP — structural change
@@ -77,11 +77,11 @@ official figures.
 
 ---
 
-## 1. A decade without income growth
+## 1. A decade without growth in GDP per capita
 
 ![GDP per capita against its 2015 peak](figures/01_gdp_per_capita_vs_peak.png)
 
-Nigeria's income per person rose strongly through the 2000s — from
+Nigeria's GDP per capita rose strongly through the 2000s — from
 $1,542 in 1991 to a peak of $2,586 in 2015 — then fell and has stayed
 below that peak for **ten consecutive years**.
 
@@ -90,7 +90,7 @@ growth:
 
 ![GDP growth against population growth](figures/02_growth_vs_population.png)
 
-Per-capita income rises only when output grows faster than population.
+GDP per capita rises only when output grows faster than population.
 In **6 of the 11 years** since the 2015 peak, it did not. Nigeria's
 population has been growing at roughly 2.1–2.6% a year throughout, which
 sets a demanding floor: growth below that figure means average incomes
@@ -106,8 +106,10 @@ uninterrupted performance at that rate.
 
 ![Consumer price inflation](figures/03_inflation.png)
 
-Inflation reached **33.2% in 2024**, the highest since the 1990s, before
-easing to 23.0% in 2025. For context, the series peak is 72.8% in 1995,
+Annual consumer price inflation, measured as the year-on-year change in
+the CPI (% per year), reached **33.2% in 2024**, the highest since the
+1990s, before easing to 23.0% in 2025. For context, the series peak is
+72.8% in 1995,
 so this is not unprecedented — but it follows two decades in which
 inflation mostly sat in the 10–18% range.
 
@@ -133,27 +135,31 @@ A 3.1% unemployment rate would, in a high-income economy, describe an
 economy at or beyond full employment. Here it describes something quite
 different.
 
-Nigeria has no meaningful unemployment insurance. Without income
-support, being unemployed is not an affordable state: people take
-whatever work is available rather than search while jobless. They are
-therefore recorded as *employed* — in own-account work, unpaid family
-labour, and informal activity — rather than as unemployed. Very high
-participation (82.5%) alongside very low unemployment (3.1%) is the
-signature of exactly this absorption.
+What the data shows is three numbers that sit oddly together: very high
+participation (82.5%), very low unemployment (3.1%), and two in three
+workers (66.5%) in own-account or unpaid family work, outside formal
+contracts and social protection.
 
-The indicator that actually carries information is vulnerable
-employment: **two in three Nigerian workers** are in own-account or
-unpaid family work, outside formal contracts and social protection.
+**One reading is** that the absence of unemployment insurance explains
+the combination. Without income support, being unemployed is not an
+affordable state: people take whatever work is available rather than
+search while jobless, and are therefore recorded as *employed* — in
+own-account work, unpaid family labour and informal activity — rather
+than as unemployed. On that reading, the indicator carrying information
+is vulnerable employment, not the unemployment rate. The data here is
+consistent with it, but does not establish it: testing it needs
+job-search and informality data this analysis does not have.
 
 To be accurate about the direction of travel: this figure has *improved*
 since 1991, falling 8.8 points from 75.3%. But that is 0.26 points a
 year — a pace at which halving the current figure would take roughly
 130 years. The trend is real; its speed is not.
 
-**Implication:** policy and analysis aimed at "reducing unemployment" in
-Nigeria is aimed at a number that is already low and largely
-uninformative. The measurable problem is the quality, security and
-productivity of work that people already have.
+**One reading, stated as such:** policy and analysis aimed at "reducing
+unemployment" in Nigeria is aimed at a number that is already low and
+largely uninformative, and the measurable problem is the quality,
+security and productivity of work people already have. That is an
+interpretation of the figures above, not a result computed from them.
 
 ## 4. Structural change without industrialisation
 
@@ -179,12 +185,15 @@ usually called **premature deindustrialisation**: workers exit
 low-productivity agriculture but are absorbed by services rather than by
 a growing industrial base.
 
-The significance is that services in this context are substantially the
-same informal, own-account activity counted in finding 3. The sectoral
-shift and the job-quality problem are not two findings; they are one.
-Agriculture still produces 23.0% of GDP while employing 33.5% of
-workers, which remains a productivity gap, but the destination of
-departing labour has not been higher-productivity manufacturing.
+What the data shows alongside this is that agriculture still produces
+23.0% of GDP while employing 33.5% of workers — a productivity gap —
+and that the employment gain went to services, not to manufacturing.
+
+**One reading** is that services in this context are substantially the
+same informal, own-account activity counted in finding 3, which would
+make the sectoral shift and the job-quality problem one finding rather
+than two. Separating formal from informal services would test that; this
+dataset does not split the services aggregate.
 
 ## 5. Oil: what the rents measure does and does not show
 
@@ -241,14 +250,15 @@ The North West holds Nigeria's **largest workforce (30.7m)** and its
 supports roughly one dependant; a worker in the South South supports
 about 0.71.
 
-**Why this matters for the earlier findings.** The vulnerable-employment
-and per-capita-income results are national averages applied to a country
-whose regions face materially different arithmetic. The same national
-income per head stretches much further in Lagos than in Bauchi, because
-it is divided across fewer dependants. Any policy inference drawn from
-the national figures alone — on job creation, schooling or social
-protection — is being drawn from an average that describes no actual
-state very well.
+**Why this matters for the earlier findings — one reading.** The
+vulnerable-employment and GDP per capita results are national averages
+applied to a country whose regions face materially different arithmetic:
+the same national output per head stretches further in Lagos than in
+Bauchi, because it is divided across fewer dependants. On that reading,
+a policy inference drawn from the national figures alone — on job
+creation, schooling or social protection — is drawn from an average that
+describes no actual state very well. What the data shows is the spread
+itself: 60.5 to 107.2 dependants per 100 working-age people.
 
 ## 7. State poverty, and a correlation that needs splitting
 
@@ -294,14 +304,29 @@ dependency ratio. Much of the pooled r = 0.81 is therefore the gap
 all 37 states, and the scatter shows exactly that: a flat southern
 cluster and a steep northern one.
 
+How separated the two groups are is worth stating as a count rather
+than leaving to the eye: **18 of the 20 northern states have a higher
+poverty headcount than every southern state.** Only the FCT (10.2%) and
+Kogi (14.0%) fall inside the southern range at all, against a southern
+maximum of 19.9% in Ogun. The medians are 49.5% in the north and 9.4%
+in the south. Two groups this far apart are what produce a strong
+pooled correlation out of one real relationship and one absent.
+
+Spearman's rank correlation confirms it is not a linearity artefact.
+Pooled, rho = 0.65; inside the north, rho = 0.85; inside the south,
+rho = −0.16 — pointing the other way, and meaningless at n = 17. There
+is no monotone relationship in the south for Pearson's r to be
+understating.
+
 **What this does and does not say.** Even the northern relationship is
 not evidence that age structure causes poverty. High fertility raises
 the child population, which mechanically raises the dependency ratio
 and is independently associated with poverty, so a common driver
-explains much of the association. The defensible reading is that
-dependency and deprivation describe the *same* regional divide, and
-that the divide is sharp enough to make national averages misleading
-for either.
+explains much of the association. **One reading** is that dependency and
+deprivation describe the *same* regional divide, and that the divide is
+sharp enough to make national averages misleading for either. What the
+data shows is the two correlations and their difference; the common-driver
+account is an interpretation that this dataset cannot test.
 
 ---
 
@@ -358,3 +383,11 @@ python -m nigeria_economic_intelligence.analysis --figures
 
 `analysis.py --figures` prints every number quoted in this report and
 regenerates all nine figures. Nothing in this document is hand-entered.
+
+The schema, the import path and the connectors are checked on every push
+by GitHub Actions, which applies the migrations to a clean PostgreSQL 17
+container and runs the test suite against it. The eleven tests that
+assert on *loaded* values cannot run there — the published observations are
+fetched rather than committed — so they are marked `warehouse` and run
+locally instead. That split is deliberate and is stated in the README
+rather than papered over.

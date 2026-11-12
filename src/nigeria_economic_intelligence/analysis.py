@@ -65,7 +65,7 @@ def load_indicators() -> pd.DataFrame:
 
 
 def growth_findings(data: pd.DataFrame) -> dict:
-    """Per-capita income relative to its historical peak."""
+    """GDP per capita relative to its historical peak."""
     per_capita = data["NGA_GDP_PER_CAPITA"].dropna()
     peak_year = int(per_capita.idxmax())
     latest_year = int(per_capita.index[-1])
@@ -227,7 +227,7 @@ def _save(figure, name: str) -> Path:
 
 
 def figure_per_capita(data: pd.DataFrame, findings: dict) -> Path:
-    """Per-capita income against its own peak."""
+    """GDP per capita against its own peak."""
     import matplotlib.pyplot as plt
 
     series = data["NGA_GDP_PER_CAPITA"].dropna()
@@ -280,7 +280,7 @@ def figure_per_capita(data: pd.DataFrame, findings: dict) -> Path:
     )
 
     axes.set_title(
-        "Nigeria's income per person has not regained its "
+        "Nigeria's GDP per capita has not regained its "
         f"{findings['peak_year']} peak",
         color=INK,
         fontsize=12,
@@ -964,12 +964,47 @@ def poverty_findings(states: pd.DataFrame) -> dict:
             group["NGA_STATE_DEPENDENCY_RATIO"],
             group["NGA_MPI_HEADCOUNT"],
         )
+        # Rank correlation as well, so an absent result cannot be
+        # dismissed as Pearson's r missing a monotone relationship.
+        rank, _ = stats.spearmanr(
+            group["NGA_STATE_DEPENDENCY_RATIO"],
+            group["NGA_MPI_HEADCOUNT"],
+        )
         within[label] = {
             "n": int(len(group)),
             "r": float(coefficient),
             "p": float(probability),
+            "rho": float(rank),
             "mean_headcount": float(group["NGA_MPI_HEADCOUNT"].mean()),
         }
+
+    # How separated the two groups are, stated as a count rather than
+    # left to a reader to infer from a scatter: a correlation computed
+    # across two barely-overlapping clusters is mostly the gap between
+    # them.
+    northern_states = paired[northern]
+    southern_states = paired[~northern]
+    southern_max = float(southern_states["NGA_MPI_HEADCOUNT"].max())
+    northern_min = float(northern_states["NGA_MPI_HEADCOUNT"].min())
+    above = northern_states["NGA_MPI_HEADCOUNT"] > southern_max
+    inside = northern_states.loc[~above].sort_values("NGA_MPI_HEADCOUNT")
+
+    separation = {
+        "northern_n": int(len(northern_states)),
+        "northern_above_every_southern_state": int(above.sum()),
+        "southern_max": southern_max,
+        "northern_min": northern_min,
+        "northern_inside_southern_range": [
+            (str(row["state"]), float(row["NGA_MPI_HEADCOUNT"]))
+            for _, row in inside.iterrows()
+        ],
+        "northern_median": float(
+            northern_states["NGA_MPI_HEADCOUNT"].median()
+        ),
+        "southern_median": float(
+            southern_states["NGA_MPI_HEADCOUNT"].median()
+        ),
+    }
 
     ranked = paired.sort_values("NGA_MPI_HEADCOUNT")
     by_zone = (
@@ -981,6 +1016,7 @@ def poverty_findings(states: pd.DataFrame) -> dict:
     return {
         "n": int(len(paired)),
         "within": within,
+        "separation": separation,
         "lowest_state": str(ranked.iloc[0]["state"]),
         "lowest": float(ranked.iloc[0]["NGA_MPI_HEADCOUNT"]),
         "highest_state": str(ranked.iloc[-1]["state"]),
@@ -1007,12 +1043,36 @@ def figure_poverty_vs_dependency(findings: dict) -> Path:
     figure, axes = plt.subplots(figsize=(8, 5.5))
     _style_axes(axes, ylabel="Multidimensionally poor (% of population)")
 
+    grid = np.linspace(
+        paired["NGA_STATE_DEPENDENCY_RATIO"].min(),
+        paired["NGA_STATE_DEPENDENCY_RATIO"].max(),
+        50,
+    )
+
+    # The pooled line first and underneath, because the point of the
+    # chart is that it fits neither group.
+    slope, intercept = np.polyfit(
+        paired["NGA_STATE_DEPENDENCY_RATIO"],
+        paired["NGA_MPI_HEADCOUNT"],
+        1,
+    )
+    axes.plot(
+        grid,
+        slope * grid + intercept,
+        color=MUTED,
+        linewidth=1.4,
+        linestyle="--",
+        zorder=2,
+        label=f"Pooled fit, r = {findings['pearson']:.2f}",
+    )
+
     # Two groups, two marker shapes: identity never rests on colour.
-    for mask, colour, marker, label in (
-        (northern, ORANGE, "o", "Northern zones"),
-        (~northern, BLUE, "s", "Southern zones"),
+    for mask, colour, marker, label, key in (
+        (northern, ORANGE, "o", "Northern zones", "north"),
+        (~northern, BLUE, "s", "Southern zones", "south"),
     ):
         subset = paired[mask]
+        group = findings["within"][key]
         axes.scatter(
             subset["NGA_STATE_DEPENDENCY_RATIO"],
             subset["NGA_MPI_HEADCOUNT"],
@@ -1021,23 +1081,30 @@ def figure_poverty_vs_dependency(findings: dict) -> Path:
             s=58,
             edgecolor=SURFACE,
             linewidth=1.4,
-            zorder=3,
-            label=label,
+            zorder=4,
+            label=f"{label}, r = {group['r']:.2f} (n = {group['n']})",
         )
 
-    slope, intercept = np.polyfit(
-        paired["NGA_STATE_DEPENDENCY_RATIO"],
-        paired["NGA_MPI_HEADCOUNT"],
-        1,
-    )
-    grid = np.linspace(
-        paired["NGA_STATE_DEPENDENCY_RATIO"].min(),
-        paired["NGA_STATE_DEPENDENCY_RATIO"].max(),
-        50,
-    )
-    axes.plot(grid, slope * grid + intercept, color=MUTED, linewidth=1.5, zorder=2)
+        # Each group's own fit, drawn only across its own range so the
+        # lines make no claim outside the data that produced them.
+        group_slope, group_intercept = np.polyfit(
+            subset["NGA_STATE_DEPENDENCY_RATIO"],
+            subset["NGA_MPI_HEADCOUNT"],
+            1,
+        )
+        inside = (
+            grid >= subset["NGA_STATE_DEPENDENCY_RATIO"].min()
+        ) & (grid <= subset["NGA_STATE_DEPENDENCY_RATIO"].max())
+        axes.plot(
+            grid[inside],
+            group_slope * grid[inside] + group_intercept,
+            color=colour,
+            linewidth=2.2,
+            alpha=0.85,
+            zorder=3,
+        )
 
-    for state in ("Lagos", "Bauchi", "Anambra", "Kaduna"):
+    for state in ("Lagos", "Bauchi", "Kaduna"):
         row = paired[paired["state"] == state]
         if row.empty:
             continue
@@ -1058,7 +1125,7 @@ def figure_poverty_vs_dependency(findings: dict) -> Path:
     )
     axes.legend(frameon=False, fontsize=9, labelcolor=MUTED, loc="upper left")
     axes.set_title(
-        "Poverty and age structure describe the same divide",
+        "One pooled line, two different relationships",
         color=INK,
         fontsize=12,
         loc="left",
@@ -1093,9 +1160,27 @@ def print_poverty_findings() -> None:
     for label, group in findings["within"].items():
         print(
             f"    {label:<6} n={group['n']:<3} r={group['r']:+.3f} "
-            f"p={group['p']:.3f}   "
+            f"p={group['p']:.3f} rho={group['rho']:+.3f}   "
             f"mean headcount {group['mean_headcount']:.1f}%"
         )
+    gap = findings["separation"]
+    print(
+        f"  separation: {gap['northern_above_every_southern_state']} of "
+        f"{gap['northern_n']} northern states exceed every southern "
+        f"state (southern max {gap['southern_max']:.1f}%)"
+    )
+    if gap["northern_inside_southern_range"]:
+        print(
+            "    northern states inside the southern range: "
+            + ", ".join(
+                f"{name} {value:.1f}%"
+                for name, value in gap["northern_inside_southern_range"]
+            )
+        )
+    print(
+        f"    medians: north {gap['northern_median']:.1f}%, "
+        f"south {gap['southern_median']:.1f}%"
+    )
     print("  mean headcount by zone:")
     for zone, row in findings["zone_summary"].iterrows():
         print(
