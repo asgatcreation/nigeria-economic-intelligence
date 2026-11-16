@@ -51,52 +51,36 @@ def test_batch_tracking_columns_exist():
     assert "batch_id" in revision_columns
 
 
-def test_revision_trigger_tolerates_an_unset_batch_id():
+def test_revision_trigger_tolerates_an_unset_batch_id(scratch_observation):
     """A manual update outside an import must still record a revision."""
-    with engine.connect() as connection:
-        transaction = connection.begin()
+    connection = scratch_observation["connection"]
+    observation_id = scratch_observation["observation_id"]
 
-        try:
-            observation = connection.execute(
-                text(
-                    """
-                    SELECT observation_id
-                    FROM indicator_observations
-                    ORDER BY observation_id
-                    LIMIT 1
-                    """
-                )
-            ).first()
+    connection.execute(
+        text(
+            """
+            UPDATE indicator_observations
+            SET notes = 'manual edit under test'
+            WHERE observation_id = :observation_id
+            """
+        ),
+        {"observation_id": observation_id},
+    )
 
-            assert observation is not None
-            observation_id = observation.observation_id
+    revision = connection.execute(
+        text(
+            """
+            SELECT batch_id
+            FROM indicator_observation_revisions
+            WHERE observation_id = :observation_id
+            ORDER BY revision_id DESC
+            LIMIT 1
+            """
+        ),
+        {"observation_id": observation_id},
+    ).first()
 
-            connection.execute(
-                text(
-                    """
-                    UPDATE indicator_observations
-                    SET notes = 'manual edit under test'
-                    WHERE observation_id = :observation_id
-                    """
-                ),
-                {"observation_id": observation_id},
-            )
+    assert revision is not None
+    assert revision.batch_id is None
 
-            revision = connection.execute(
-                text(
-                    """
-                    SELECT batch_id
-                    FROM indicator_observation_revisions
-                    WHERE observation_id = :observation_id
-                    ORDER BY revision_id DESC
-                    LIMIT 1
-                    """
-                ),
-                {"observation_id": observation_id},
-            ).first()
 
-            assert revision is not None
-            assert revision.batch_id is None
-
-        finally:
-            transaction.rollback()

@@ -125,11 +125,17 @@ service container, then the test suite, then the R connectivity check. It
 is honest about one limit: the published observations are fetched from the
 World Bank and HDX rather than committed to the repository, so the CI
 database has the schema but no data. The eleven tests that assert on
-loaded values are marked `warehouse` and deselected there; the other 78
+loaded values are marked `warehouse` and deselected there; the other 79
 run on every push, covering the migrations, the schema and its CHECK
 constraints, the validator, the revision trigger, batch tracking and all
-three connectors against recorded fixtures. The full suite runs locally after
-ingesting.
+three connectors against recorded fixtures. The full suite runs locally
+after ingesting.
+
+That split earned its keep on the first CI run, which failed: two trigger
+tests picked whichever observation happened to be first in the table, so
+they passed on a loaded warehouse and failed on a clean one. They now
+build their own row inside the rolled-back transaction they were already
+using, and a third test checks the rollback leaves nothing behind.
 
 Known gaps, in the order they bind:
 
@@ -179,6 +185,15 @@ python -m nigeria_economic_intelligence.migrate up
 ```bash
 python -m pytest                      # everything
 python -m pytest -m "not warehouse"   # what CI runs: no loaded data needed
+```
+
+To reproduce CI's conditions exactly — the schema with no data in it —
+point the same command at an empty database:
+
+```bash
+createdb nei_ci_sim
+POSTGRES_DB=nei_ci_sim python -m nigeria_economic_intelligence.migrate up
+POSTGRES_DB=nei_ci_sim python -m pytest -m "not warehouse"
 ```
 
 Most tests talk to the running database, so step 1 and step 3 must be done
