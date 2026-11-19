@@ -109,3 +109,11 @@ def test_poverty_is_an_allowed_domain():
     assert "poverty" in _allowed_values(
         "indicators", "indicators_domain_check"
     )
+
+
+def test_geography_is_an_allowed_domain():
+    """Migration 006 added it for state land area; both sides must agree."""
+    assert "geography" in ingestion.ALLOWED_DOMAINS
+    assert "geography" in _allowed_values(
+        "indicators", "indicators_domain_check"
+    )

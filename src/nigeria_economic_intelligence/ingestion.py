@@ -31,7 +31,8 @@ ALLOWED_GEO_LEVELS = {
 # test_schema_constants reconciles the two.
 ALLOWED_DOMAINS = {
     "economy", "labour_market", "demographics",
-    "prices", "trade", "agriculture", "poverty", "other",
+    "prices", "trade", "agriculture", "poverty",
+    "geography", "other",
 }
 
 ALLOWED_FREQUENCIES = {

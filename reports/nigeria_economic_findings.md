@@ -1,6 +1,6 @@
 # Nigeria: growth, prices, work and population, 1991–2025
 
-An analysis of 898 observations across 25 indicators, read from the
+An analysis of 935 observations across 26 indicators, read from the
 project's PostgreSQL warehouse. Every figure quoted below is computed by
 [`analysis.py`](../src/nigeria_economic_intelligence/analysis.py) from
 SQL against that warehouse, not transcribed by hand, and can be
@@ -31,8 +31,14 @@ Six findings, in descending order of how much they change the picture:
    well.
 5. **State poverty ranges 68-fold**, from 1.1% of people in Lagos to
    75.4% in Bauchi. It correlates with age dependency at r = 0.81,
-   but that pooled figure hides two regimes: strong inside the north
-   (r = 0.86), absent inside the south (r = 0.07).
+   but that pooled figure hides two regimes. A model with an
+   interaction term puts the difference in slope at **1.29 points of
+   poverty per dependant (p = 0.0001)**: the relationship is strong
+   in the north (r = 0.86) and flat in the south — though with only
+   17 southern states, the southern interval runs from −0.46 to 0.50
+   and establishes no absence. Both measures are spatially clustered
+   on a test that never sees the zone labels (Moran's I = 0.80 and
+   0.53).
 6. **Oil's measured share of output has collapsed** from 28.7% of GDP
    (1993) to 6.2% (2021), and correlates only weakly with growth
    (r = 0.12). This is a genuine finding about the *rents* measure, and
@@ -46,10 +52,10 @@ Six findings, in descending order of how much they change the picture:
 | | |
 |---|---|
 | **National source** | World Bank, World Development Indicators (API v2) |
-| **State sources** | COD-PS Nigeria 2022 (UNFPA / US Census Bureau); OPHI global MPI from MICS 2021 — both via HDX |
+| **State sources** | COD-PS Nigeria 2022 (UNFPA / US Census Bureau); OPHI global MPI from MICS 2021; COD-AB admin boundaries and land areas (OCHA, CC BY-IGO 3.0) — all via HDX |
 | **Geography** | Nigeria national; 36 states and the FCT, grouped into 6 zones |
 | **Period** | 1991–2025 national (oil rents to 2021); 2022 state population; 2021 state poverty |
-| **Observations** | 898 across 25 indicators (excludes the 2 synthetic demo rows) |
+| **Observations** | 935 across 26 indicators (excludes the 2 synthetic demo rows) |
 | **Retrieved** | 2 November 2026 |
 
 Data is fetched by a connector that writes a CSV in the project's
@@ -297,9 +303,11 @@ entirely:
 | Northern zones | 20 | **+0.86** | <0.001 | 49.0% |
 | Southern zones | 17 | +0.07 | 0.80 | 10.3% |
 
-Inside the north the relationship is strong. Inside the south it does
-not exist at all — southern poverty is uniformly low whatever the
-dependency ratio. Much of the pooled r = 0.81 is therefore the gap
+Inside the north the relationship is strong. Inside the south nothing
+of the kind shows up — southern poverty is low whatever the dependency
+ratio. (Section 8 qualifies this: with 17 states, the southern estimate
+is too imprecise to establish an absence, though the *difference*
+between the two slopes is established.) Much of the pooled r = 0.81 is therefore the gap
 *between* two groups rather than a single relationship running through
 all 37 states, and the scatter shows exactly that: a flat southern
 cluster and a steep northern one.
@@ -314,9 +322,10 @@ pooled correlation out of one real relationship and one absent.
 
 Spearman's rank correlation confirms it is not a linearity artefact.
 Pooled, rho = 0.65; inside the north, rho = 0.85; inside the south,
-rho = −0.16 — pointing the other way, and meaningless at n = 17. There
-is no monotone relationship in the south for Pearson's r to be
-understating.
+rho = −0.16 — pointing the other way, and not distinguishable from
+noise at n = 17. So the flat southern result is not Pearson's r missing
+a monotone relationship; it is a subset too small to say much either
+way, which is what section 8 quantifies.
 
 **What this does and does not say.** Even the northern relationship is
 not evidence that age structure causes poverty. High fertility raises
@@ -327,6 +336,169 @@ deprivation describe the *same* regional divide, and that the divide is
 sharp enough to make national averages misleading for either. What the
 data shows is the two correlations and their difference; the common-driver
 account is an interpretation that this dataset cannot test.
+
+## 8. How much of section 7 survives contact with uncertainty
+
+Section 7 reports three correlations as point estimates on 37, 20 and 17
+observations. Point estimates at those sample sizes are not findings on
+their own, and the comparison of two of them is not a test. This section
+attaches intervals, replaces the comparison with a model that tests it,
+and then asks whether the north–south pattern is spatial at all or only
+an artefact of the zone labels used to define it.
+
+### 8.1 Intervals, not point estimates
+
+![Correlations with 95% intervals](figures/10_correlation_intervals.png)
+
+Two intervals are computed for each correlation by different routes.
+Fisher's z transform gives the textbook interval and assumes the pair is
+bivariate normal. The percentile bootstrap, over 10,000 resamples of the
+state pairs, assumes nothing of the kind. Where they agree, the interval
+is not an artefact of the assumption.
+
+| Group | n | r | Bootstrap 95% | Fisher z 95% |
+|---|---:|---:|---|---|
+| All states | 37 | 0.810 | [0.654, 0.908] | [0.660, 0.899] |
+| Northern zones | 20 | 0.857 | [0.702, 0.952] | [0.668, 0.942] |
+| Southern zones | 17 | 0.068 | **[−0.460, 0.504]** | [−0.426, 0.531] |
+
+They agree closely in all three cases. The southern interval is the one
+that matters: it is nearly a unit wide and comfortably contains zero.
+The honest statement is not "there is no relationship in the south" but
+**"17 states cannot tell us whether there is one."** Anything from a
+moderate negative association to a moderate positive one is consistent
+with this data.
+
+The northern interval is narrow enough to carry weight, and its lower
+bound of 0.70 is still a strong relationship.
+
+### 8.2 One model instead of two correlations
+
+Reporting the two correlations side by side asserts that the
+relationship differs between north and south without ever testing that
+assertion. A single model with an interaction term tests it directly,
+because the interaction coefficient *is* the difference between the two
+slopes.
+
+```
+headcount ~ dependency * north        HC3 robust standard errors, n = 37
+```
+
+| Term | Estimate | Robust SE | p | 95% CI |
+|---|---:|---:|---:|---|
+| Intercept | 6.31 | 19.63 | 0.748 | [−32.2, 44.8] |
+| dependency | 0.053 | 0.256 | 0.835 | [−0.449, 0.556] |
+| north | −74.67 | 26.91 | 0.006 | [−127.4, −21.9] |
+| **dependency × north** | **1.285** | 0.322 | **0.0001** | [0.653, 1.917] |
+
+Read through to the slopes: in the south, poverty rises **0.05 points
+per additional dependant**, which is indistinguishable from flat. In the
+north it rises **1.34 points**. The difference of 1.285 is the
+interaction term, and p = 0.0001 is the test section 7 was missing. The
+two regimes are not an impression from a scatter; they are a
+statistically distinguishable difference in slope. R² = 0.883.
+
+Standard errors are HC3 because the residuals are heteroscedastic by
+construction — compressed near zero in the south, spread wide in the
+north. The Breusch–Pagan test is borderline (p = 0.061) rather than
+decisive, but the robust errors are the right default here regardless.
+They are *smaller* than the classical ones for every term, so this is
+not a case of robustness quietly rescuing a weak result.
+
+### 8.3 Which states are driving it
+
+![Leverage, residuals and Cook's distance](figures/11_model_diagnostics.png)
+
+Three states exceed the conventional Cook's distance threshold of
+4/n = 0.11. They are not the ones an eye on the scatter would pick:
+
+| State | Cook's D | Why |
+|---|---:|---|
+| Borno | 0.26 | Large positive residual: much poorer than its dependency ratio predicts |
+| Lagos | 0.16 | Highest leverage in the data (0.32) — the extreme low end of both variables |
+| Katsina | 0.12 | Negative residual at high leverage |
+
+Borno is the interesting one, and it is not a data error. Borno has been
+the centre of a long insurgency with large-scale displacement, so a
+poverty rate far above what its age structure predicts is what one would
+expect, and its population denominator is a projection carried forward
+from 2006 through exactly the period of that displacement.
+
+Refitting without all three (n = 34) does not rescue the southern
+relationship or weaken the northern one. The southern slope moves to
+**−0.175**, the northern to **+1.554**, and the interaction p-value
+falls below 0.0001. The conclusion does not rest on the influential
+points.
+
+### 8.4 Is the pattern spatial, or just the zone labels?
+
+Every state finding so far has been expressed through geopolitical
+zones — a grouping drawn before the data was looked at. Splitting states
+into "north" and "south" and then finding a difference between them is
+not entirely free of circularity.
+
+Moran's I needs no such grouping. It asks whether states with similar
+values sit closer together than a random re-allocation of the same
+values across the same map would put them.
+
+![State poverty and dependency, mapped](figures/12_state_maps.png)
+
+| Measure | Moran's I | E[I] | z | p |
+|---|---:|---:|---:|---:|
+| Poverty headcount | **+0.799** | −0.028 | +7.98 | 0.0001 |
+| Dependency ratio | **+0.530** | −0.028 | +5.47 | 0.0001 |
+
+Both are strongly, positively autocorrelated. The p-values are 0.0001
+because that is the floor for 9,999 permutations: no shuffle of the real
+values across the real map produced a statistic as extreme as the
+observed one. The pattern is spatial, and it is found without being told
+where north is.
+
+![Moran scatterplot for poverty](figures/13_moran_scatter.png)
+
+Moran's I is the slope of this line: each state's value against the mean
+of its four nearest neighbours. Both quantities are standardised, so the
+points in the upper right are poor states surrounded by poor states, and
+those in the lower left are the reverse.
+
+Two choices had to be made and are worth stating. Neighbours are the
+four nearest states by centroid distance rather than shared borders:
+contiguity is the usual choice for administrative units, but deriving it
+reliably from generalised boundary polygons is error-prone, while
+k-nearest-neighbours is unambiguous and leaves no state isolated.
+Because *k* is a free parameter, the statistic is reported across a
+range of it:
+
+| k | 3 | 4 | 5 | 6 | 8 |
+|---|---:|---:|---:|---:|---:|
+| Poverty | 0.82 | 0.80 | 0.81 | 0.76 | 0.68 |
+| Dependency | 0.55 | 0.53 | 0.53 | 0.50 | 0.38 |
+
+The decline at k = 8 is expected — averaging over more distant
+neighbours dilutes any local pattern — and the conclusion is unchanged
+across the range. Inference is permutation-based rather than normal
+approximation, which at n = 37 would not be trustworthy.
+
+### 8.5 What section 7 should now be read as saying
+
+- The pooled r = 0.81 is real but is largely the gap between two groups.
+- The northern relationship is strong and its interval supports that:
+  r = 0.86, [0.70, 0.95].
+- The southern "absence" is **not an established absence**. It is 17
+  states, an interval from −0.46 to 0.50, and no conclusion either way.
+- The *difference* between the two slopes, however, is established:
+  p = 0.0001, and it survives dropping the three influential states.
+- Both poverty and age structure are spatially clustered on a test that
+  never sees the zone labels, so the regional pattern is not an artefact
+  of how the groups were drawn.
+
+**One reading**, unchanged from section 7 and still untestable here: the
+two measures describe a single regional divide with a common driver
+rather than one causing the other. Nothing in this section tests that.
+What this section establishes is narrower and firmer — that the
+difference in slope is real, that it does not depend on three states,
+and that the geography is genuinely clustered.
+
 
 ---
 
@@ -364,11 +536,27 @@ Stated plainly, because they bound every conclusion above:
    materially in a year, which is reasonable but not free.
 7. **Annual frequency.** Annual data cannot resolve the within-year
    dynamics that matter for inflation and FX.
-8. **Correlation only.** Sections 5 and 7 report a correlation. No causal
-   claim is made or supported anywhere in this analysis.
-9. **Cross-checking.** The national series are World Bank WDI only. Cross-checking
-   against NBS and CBN publications would strengthen it considerably and
-   is the obvious next step.
+8. **Association only.** Section 8 fits a model and tests a difference
+   in slopes, which is still not a causal claim: nothing here
+   identifies a causal effect, and no such claim is made or supported
+   anywhere in this analysis.
+9. **Seventeen southern states.** The southern correlation's interval
+   spans −0.46 to 0.50. Section 8 reports an absence of evidence, not
+   evidence of absence, and the distinction matters for how section 7
+   is read.
+10. **Spatial weights are a choice.** Moran's I is computed on
+    four-nearest-neighbour weights from published state centroids
+    rather than shared borders, because contiguity derived from
+    generalised polygons is unreliable. The statistic is reported
+    across k = 3 to 8 so the choice is visible; the conclusion does
+    not turn on it.
+11. **Boundary areas are generalised.** COD-AB state areas sum to
+    about 1.5% below Nigeria's usually published land area. They are
+    internally consistent and comparable between states, and are not
+    quoted here as national land area.
+12. **Cross-checking.** The national series are World Bank WDI only.
+    Cross-checking against NBS and CBN publications would strengthen it
+    considerably and is the obvious next step.
 
 ## Reproducing this analysis
 
@@ -378,11 +566,13 @@ python -m nigeria_economic_intelligence.migrate up
 python -m nigeria_economic_intelligence.sources.worldbank --ingest
 python -m nigeria_economic_intelligence.sources.hdx_population --ingest
 python -m nigeria_economic_intelligence.sources.ophi_mpi --ingest
+python -m nigeria_economic_intelligence.sources.cod_ab_boundaries --ingest
 python -m nigeria_economic_intelligence.analysis --figures
 ```
 
 `analysis.py --figures` prints every number quoted in this report and
-regenerates all nine figures. Nothing in this document is hand-entered.
+regenerates all thirteen figures. Nothing in this document is
+hand-entered.
 
 The schema, the import path and the connectors are checked on every push
 by GitHub Actions, which applies the migrations to a clean PostgreSQL 17

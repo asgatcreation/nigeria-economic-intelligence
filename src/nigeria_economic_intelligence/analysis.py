@@ -668,15 +668,27 @@ def main() -> None:
         action="store_true",
         help="Skip the state-level section",
     )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help=(
+            "Skip the modelling and spatial section, which bootstraps "
+            "and permutes and so takes appreciably longer"
+        ),
+    )
     args = parser.parse_args()
 
     print_findings()
 
     if not args.national_only:
+        states = load_states()
         print()
         print_state_findings()
         print()
         print_poverty_findings()
+        if not args.quick:
+            print()
+            print_statistical_findings(states)
 
     if args.figures:
         print("\nFIGURES")
@@ -684,10 +696,10 @@ def main() -> None:
         if not args.national_only:
             paths += build_state_figures()
             paths.append(
-                figure_poverty_vs_dependency(
-                    poverty_findings(load_states())
-                )
+                figure_poverty_vs_dependency(poverty_findings(states))
             )
+            if not args.quick:
+                paths += build_statistical_figures(states)
         for path in paths:
             print(f"  {path.relative_to(PROJECT_ROOT)}")
 
@@ -1187,6 +1199,725 @@ def print_poverty_findings() -> None:
             f"    {zone:<14} {row['mean']:5.1f}%   "
             f"(range {row['lowest']:.1f}-{row['highest']:.1f})"
         )
+
+
+
+# ---------------------------------------------------------------------
+# Phase 2: uncertainty, a model in place of two correlations, and a test
+# of whether the north-south pattern is spatial rather than merely named.
+# ---------------------------------------------------------------------
+
+BOOTSTRAP_DRAWS = 10_000
+BOOTSTRAP_SEED = 20261119
+
+
+def correlation_interval(
+    x,
+    y,
+    *,
+    draws: int = BOOTSTRAP_DRAWS,
+    seed: int = BOOTSTRAP_SEED,
+) -> dict:
+    """Pearson's r with two 95% intervals that are computed differently.
+
+    Fisher's z transform gives the textbook interval. It assumes the
+    pair is bivariate normal, which 37 states with a long right tail of
+    poverty rates are not obliged to be, so a percentile bootstrap over
+    resampled state pairs is reported beside it. Where the two agree,
+    the interval is not an artefact of the assumption; where they
+    disagree, the bootstrap is the one to believe.
+
+    Both are wide at this sample size, which is the point of showing
+    them: r = 0.07 and r = 0.86 are point estimates on 17 and 20
+    observations.
+    """
+    from scipy import stats
+
+    first = np.asarray(x, dtype=float)
+    second = np.asarray(y, dtype=float)
+
+    if len(first) != len(second):
+        raise ValueError("Correlation needs paired series of equal length")
+    if len(first) < 4:
+        raise ValueError(
+            f"A correlation interval needs at least 4 pairs, got {len(first)}"
+        )
+
+    count = len(first)
+    r, p_value = stats.pearsonr(first, second)
+
+    # Fisher z: arctanh(r) is approximately normal with sd 1/sqrt(n-3).
+    critical = stats.norm.ppf(0.975)
+    z = np.arctanh(r)
+    margin = critical / np.sqrt(count - 3)
+    fisher = (float(np.tanh(z - margin)), float(np.tanh(z + margin)))
+
+    generator = np.random.default_rng(seed)
+    resampled = np.empty(draws, dtype=float)
+    taken = 0
+    for _ in range(draws * 3):
+        if taken == draws:
+            break
+        picks = generator.integers(0, count, count)
+        sample_x = first[picks]
+        sample_y = second[picks]
+        # A resample can be degenerate; skip it rather than let a nan
+        # into the percentiles.
+        if sample_x.std() == 0 or sample_y.std() == 0:
+            continue
+        resampled[taken] = stats.pearsonr(sample_x, sample_y)[0]
+        taken += 1
+
+    if taken < draws:
+        resampled = resampled[:taken]
+
+    bootstrap = (
+        float(np.percentile(resampled, 2.5)),
+        float(np.percentile(resampled, 97.5)),
+    )
+
+    return {
+        "n": count,
+        "r": float(r),
+        "p": float(p_value),
+        "fisher_low": fisher[0],
+        "fisher_high": fisher[1],
+        "bootstrap_low": bootstrap[0],
+        "bootstrap_high": bootstrap[1],
+        "bootstrap_draws": int(taken),
+        "includes_zero": bootstrap[0] <= 0.0 <= bootstrap[1],
+        "width": float(bootstrap[1] - bootstrap[0]),
+    }
+
+
+def poverty_intervals(states: pd.DataFrame) -> dict:
+    """Interval estimates for the three correlations the report quotes."""
+    paired = states.dropna(
+        subset=["NGA_MPI_HEADCOUNT", "NGA_STATE_DEPENDENCY_RATIO"]
+    )
+    northern = paired["zone"].str.startswith("North")
+
+    groups = {
+        "pooled": paired,
+        "north": paired[northern],
+        "south": paired[~northern],
+    }
+
+    return {
+        label: correlation_interval(
+            group["NGA_STATE_DEPENDENCY_RATIO"],
+            group["NGA_MPI_HEADCOUNT"],
+        )
+        for label, group in groups.items()
+    }
+
+
+def poverty_model(states: pd.DataFrame) -> dict:
+    """Fit poverty on dependency, allowing the slope to differ by region.
+
+    Reporting two separate correlations says the relationship differs
+    between north and south without ever testing that claim. One model
+    with an interaction term does test it: the interaction coefficient
+    *is* the difference between the two slopes, and its p-value is the
+    test of whether that difference is distinguishable from zero.
+
+    Standard errors are HC3, which is the heteroscedasticity-consistent
+    estimator with the best small-sample behaviour of the usual family --
+    and the residuals here are plainly heteroscedastic, being compressed
+    near zero in the south and spread wide in the north.
+
+    Influence diagnostics come from the ordinary fit, because leverage
+    and Cook's distance are properties of the design and the residuals
+    rather than of the covariance estimator.
+    """
+    import statsmodels.api as sm
+    import statsmodels.formula.api as smf
+
+    paired = states.dropna(
+        subset=["NGA_MPI_HEADCOUNT", "NGA_STATE_DEPENDENCY_RATIO"]
+    ).copy()
+
+    frame = pd.DataFrame(
+        {
+            "state": paired["state"].to_numpy(),
+            "zone": paired["zone"].to_numpy(),
+            "headcount": paired["NGA_MPI_HEADCOUNT"].to_numpy(float),
+            "dependency": paired["NGA_STATE_DEPENDENCY_RATIO"].to_numpy(float),
+            "north": paired["zone"]
+            .str.startswith("North")
+            .astype(int)
+            .to_numpy(),
+        }
+    )
+
+    formula = "headcount ~ dependency * north"
+    plain = smf.ols(formula, data=frame).fit()
+    robust = smf.ols(formula, data=frame).fit(cov_type="HC3")
+
+    intervals = robust.conf_int()
+    terms = {}
+    for name in robust.params.index:
+        terms[name] = {
+            "estimate": float(robust.params[name]),
+            "robust_se": float(robust.bse[name]),
+            "classical_se": float(plain.bse[name]),
+            "p": float(robust.pvalues[name]),
+            "low": float(intervals.loc[name, 0]),
+            "high": float(intervals.loc[name, 1]),
+        }
+
+    southern_slope = terms["dependency"]["estimate"]
+    difference = terms["dependency:north"]["estimate"]
+
+    influence = plain.get_influence()
+    cooks = influence.cooks_distance[0]
+    leverage = influence.hat_matrix_diag
+    studentised = influence.resid_studentized_external
+
+    count = len(frame)
+    threshold = 4.0 / count
+
+    diagnostics = pd.DataFrame(
+        {
+            "state": frame["state"],
+            "zone": frame["zone"],
+            "cooks_d": cooks,
+            "leverage": leverage,
+            "studentised_residual": studentised,
+        }
+    ).sort_values("cooks_d", ascending=False)
+
+    influential = diagnostics[diagnostics["cooks_d"] > threshold]
+
+    # The honest test of an influential point is what happens without
+    # it, so refit without every state the threshold flags.
+    kept = frame[~frame["state"].isin(influential["state"])]
+    refit = smf.ols(formula, data=kept).fit(cov_type="HC3")
+
+    return {
+        "n": count,
+        "formula": formula,
+        "terms": terms,
+        "southern_slope": float(southern_slope),
+        "northern_slope": float(southern_slope + difference),
+        "slope_difference": float(difference),
+        "slope_difference_p": terms["dependency:north"]["p"],
+        "r_squared": float(robust.rsquared),
+        "adjusted_r_squared": float(robust.rsquared_adj),
+        "cooks_threshold": float(threshold),
+        "diagnostics": diagnostics,
+        "influential": influential,
+        "refit_n": int(len(kept)),
+        "refit_southern_slope": float(refit.params["dependency"]),
+        "refit_northern_slope": float(
+            refit.params["dependency"] + refit.params["dependency:north"]
+        ),
+        "refit_difference_p": float(refit.pvalues["dependency:north"]),
+        "breusch_pagan_p": float(
+            sm.stats.diagnostic.het_breuschpagan(
+                plain.resid, plain.model.exog
+            )[1]
+        ),
+        "frame": frame,
+        "fit": robust,
+    }
+
+
+def spatial_findings(states: pd.DataFrame) -> dict:
+    """Test whether the north-south pattern is spatial clustering.
+
+    Every state-level finding so far has been expressed through zones,
+    a grouping imposed before the data was looked at. Moran's I needs no
+    such grouping: it asks whether states with similar values are closer
+    together than a random re-allocation of the same values would put
+    them.
+    """
+    from . import spatial
+    from .sources import cod_ab_boundaries
+
+    boundaries = {
+        boundary.pcode: boundary
+        for boundary in cod_ab_boundaries.load_admin1()
+    }
+
+    missing = set(states["state_code"]) - set(boundaries)
+    if missing:
+        raise RuntimeError(
+            f"No boundary for state P-codes {sorted(missing)}; the "
+            "boundary file and the warehouse disagree about Nigeria."
+        )
+
+    measures = {
+        "poverty": "NGA_MPI_HEADCOUNT",
+        "dependency": "NGA_STATE_DEPENDENCY_RATIO",
+    }
+
+    results = {}
+    for label, column in measures.items():
+        usable = states.dropna(subset=[column])
+        points = [
+            boundaries[code].centre for code in usable["state_code"]
+        ]
+        values = usable[column].to_numpy(float)
+
+        headline = spatial.morans_i(
+            values, spatial.knn_weights(points, spatial.DEFAULT_K)
+        )
+        sensitivity = spatial.moran_across_k(values, points)
+
+        results[label] = {
+            "column": column,
+            "headline": headline,
+            "sensitivity": sensitivity,
+            "values": values,
+            "points": points,
+            "states": usable["state"].tolist(),
+            "codes": usable["state_code"].tolist(),
+        }
+
+    return {
+        "k": spatial.DEFAULT_K,
+        "permutations": spatial.DEFAULT_PERMUTATIONS,
+        "measures": results,
+        "boundaries": boundaries,
+    }
+
+
+def figure_correlation_intervals(intervals: dict) -> Path:
+    """The three correlations with their uncertainty attached."""
+    import matplotlib.pyplot as plt
+
+    labels = [
+        ("pooled", "All 37 states", MUTED),
+        ("north", "Northern zones", ORANGE),
+        ("south", "Southern zones", BLUE),
+    ]
+
+    figure, axes = plt.subplots(figsize=(8.5, 4.2))
+    _style_axes(axes, ylabel="")
+
+    axes.axvline(0, color=BASELINE, linewidth=1.2, zorder=1)
+
+    for position, (key, label, colour) in enumerate(reversed(labels)):
+        row = intervals[key]
+        axes.plot(
+            [row["bootstrap_low"], row["bootstrap_high"]],
+            [position, position],
+            color=colour,
+            linewidth=3,
+            solid_capstyle="round",
+            zorder=3,
+        )
+        axes.plot(
+            [row["fisher_low"], row["fisher_high"]],
+            [position + 0.17, position + 0.17],
+            color=colour,
+            linewidth=1.2,
+            alpha=0.75,
+            zorder=3,
+        )
+        axes.scatter(
+            [row["r"]], [position],
+            color=colour, s=70, zorder=4,
+            edgecolor=SURFACE, linewidth=1.4,
+        )
+        axes.annotate(
+            f"r = {row['r']:.2f}   [{row['bootstrap_low']:.2f}, "
+            f"{row['bootstrap_high']:.2f}]   n = {row['n']}",
+            (row["bootstrap_high"], position),
+            xytext=(10, -3),
+            textcoords="offset points",
+            fontsize=9,
+            color=INK,
+            va="center",
+        )
+        axes.annotate(
+            label,
+            (row["bootstrap_low"], position),
+            xytext=(-10, -3),
+            textcoords="offset points",
+            fontsize=9,
+            color=MUTED,
+            ha="right",
+            va="center",
+        )
+
+    axes.set_yticks([])
+    axes.set_ylim(-0.6, len(labels) - 0.2)
+    axes.set_xlim(-1.05, 1.5)
+    axes.set_xticks([-0.5, 0, 0.5, 1.0])
+    axes.set_xlabel(
+        "Pearson correlation, poverty against dependency "
+        "(thick: bootstrap 95%, thin: Fisher z)",
+        color=MUTED,
+        fontsize=9,
+    )
+    axes.grid(axis="y", visible=False)
+    axes.set_title(
+        "The southern interval contains zero; the northern one is far from it",
+        color=INK,
+        fontsize=12,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "10_correlation_intervals.png")
+
+
+def figure_model_diagnostics(model: dict) -> Path:
+    """Leverage against residual, sized by influence."""
+    import matplotlib.pyplot as plt
+
+    diagnostics = model["diagnostics"]
+    threshold = model["cooks_threshold"]
+    northern = diagnostics["zone"].str.startswith("North")
+
+    figure, axes = plt.subplots(figsize=(8.5, 5.5))
+    _style_axes(axes, ylabel="Externally studentised residual")
+
+    axes.axhline(0, color=BASELINE, linewidth=1.2, zorder=1)
+    for level in (-2, 2):
+        axes.axhline(
+            level, color=BASELINE, linewidth=1, linestyle=":", zorder=1
+        )
+
+    for mask, colour, marker, label in (
+        (northern, ORANGE, "o", "Northern zones"),
+        (~northern, BLUE, "s", "Southern zones"),
+    ):
+        subset = diagnostics[mask]
+        axes.scatter(
+            subset["leverage"],
+            subset["studentised_residual"],
+            s=60 + 5200 * subset["cooks_d"],
+            color=colour,
+            marker=marker,
+            alpha=0.75,
+            edgecolor=SURFACE,
+            linewidth=1.3,
+            zorder=3,
+            label=label,
+        )
+
+    # Label the five largest influences, marking which clear the
+    # threshold, so a large bubble is never left unexplained.
+    # Only the states over the threshold are named. Labelling the next
+    # few as well put two labels on top of each other, and the marker
+    # sizes already show where the other large influences are.
+    flagged = diagnostics[diagnostics["cooks_d"] > threshold]
+    for _, row in flagged.iterrows():
+        name = str(row["state"]).replace(
+            "Federal Capital Territory", "FCT"
+        )
+        axes.annotate(
+            f"{name}  D = {row['cooks_d']:.2f}",
+            (row["leverage"], row["studentised_residual"]),
+            xytext=(13, 7),
+            textcoords="offset points",
+            fontsize=8.5,
+            color=INK,
+        )
+
+    axes.set_xlabel("Leverage (hat value)", color=MUTED, fontsize=9)
+    axes.set_xlim(right=diagnostics["leverage"].max() * 1.22)
+
+    # The scatter sizes encode Cook's distance, so the legend needs its
+    # own handles or it reproduces the largest bubble at full size.
+    from matplotlib.lines import Line2D
+
+    axes.legend(
+        handles=[
+            Line2D(
+                [], [], linestyle="none", marker=marker, markersize=8,
+                markerfacecolor=colour, markeredgecolor=SURFACE,
+                label=label,
+            )
+            for colour, marker, label in (
+                (ORANGE, "o", "Northern zones"),
+                (BLUE, "s", "Southern zones"),
+            )
+        ],
+        frameon=False, fontsize=9, labelcolor=MUTED, loc="lower right",
+    )
+    axes.set_title(
+        "Marker size is Cook's distance; the "
+        f"{len(flagged)} states above 4/n = {threshold:.2f} are named",
+        color=INK,
+        fontsize=12,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "11_model_diagnostics.png")
+
+
+def _choropleth(axes, boundaries, values_by_code, *, low, high, cmap):
+    """Draw one map panel and return the colour mapping used."""
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PatchCollection
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Polygon as MplPolygon
+
+    norm = Normalize(vmin=low, vmax=high)
+    colours = plt.get_cmap(cmap)
+
+    patches = []
+    face_colours = []
+
+    for code, boundary in sorted(boundaries.items()):
+        value = values_by_code.get(code)
+        for ring in boundary.polygons:
+            patches.append(MplPolygon(np.asarray(ring), closed=True))
+            face_colours.append(
+                colours(norm(value)) if value is not None else SURFACE
+            )
+
+    collection = PatchCollection(
+        patches,
+        facecolor=face_colours,
+        edgecolor=SURFACE,
+        linewidth=0.6,
+    )
+    axes.add_collection(collection)
+    axes.autoscale_view()
+    axes.set_aspect("equal")
+    axes.axis("off")
+
+    return plt.cm.ScalarMappable(norm=norm, cmap=colours)
+
+
+def figure_state_maps(states: pd.DataFrame, spatial_result: dict) -> Path:
+    """Poverty and dependency, mapped side by side."""
+    import matplotlib.pyplot as plt
+
+    boundaries = spatial_result["boundaries"]
+
+    panels = [
+        (
+            "NGA_MPI_HEADCOUNT",
+            "Multidimensional poverty (% poor)",
+            "Oranges",
+        ),
+        (
+            "NGA_STATE_DEPENDENCY_RATIO",
+            "Dependants per 100 aged 15-64",
+            "Blues",
+        ),
+    ]
+
+    figure, axes_pair = plt.subplots(1, 2, figsize=(11.5, 5.2))
+    figure.patch.set_facecolor(SURFACE)
+    figure.subplots_adjust(
+        top=0.88, bottom=0.06, left=0.02, right=0.98, wspace=0.02
+    )
+
+    for axes, (column, caption, cmap) in zip(axes_pair, panels):
+        usable = states.dropna(subset=[column])
+        values = dict(zip(usable["state_code"], usable[column]))
+
+        mappable = _choropleth(
+            axes,
+            boundaries,
+            values,
+            low=min(values.values()),
+            high=max(values.values()),
+            cmap=cmap,
+        )
+        axes.set_facecolor(SURFACE)
+
+        bar = figure.colorbar(
+            mappable, ax=axes, orientation="horizontal",
+            fraction=0.045, pad=0.04,
+        )
+        bar.outline.set_visible(False)
+        bar.ax.tick_params(labelsize=8, colors=MUTED, length=0)
+        bar.set_label(caption, color=MUTED, fontsize=9)
+
+        moran = spatial_result["measures"][
+            "poverty" if "MPI" in column else "dependency"
+        ]["headline"]
+        axes.set_title(
+            f"Moran's I = {moran.i:.2f}  (p = {moran.p_value:.4f})",
+            color=INK,
+            fontsize=11,
+            loc="center",
+            pad=8,
+        )
+
+    figure.suptitle(
+        "Both measures cluster in space, not just in the zone labels",
+        color=INK,
+        fontsize=12.5,
+        x=0.02,
+        ha="left",
+        y=0.98,
+    )
+
+    return _save(figure, "12_state_maps.png")
+
+
+def figure_moran_scatter(spatial_result: dict) -> Path:
+    """Each state's value against the mean of its nearest neighbours."""
+    import matplotlib.pyplot as plt
+
+    from . import spatial as spatial_module
+
+    measure = spatial_result["measures"]["poverty"]
+    values = measure["values"]
+    weights = spatial_module.knn_weights(
+        measure["points"], spatial_result["k"]
+    )
+
+    standardised = (values - values.mean()) / values.std(ddof=0)
+    lagged = weights @ standardised
+
+    figure, axes = plt.subplots(figsize=(8.5, 5.5))
+    _style_axes(axes, ylabel="Mean of the four nearest states (standardised)")
+
+    axes.axhline(0, color=BASELINE, linewidth=1.1, zorder=1)
+    axes.axvline(0, color=BASELINE, linewidth=1.1, zorder=1)
+
+    high = standardised > 0
+    for mask, colour, marker, label in (
+        (high, ORANGE, "o", "Above-average state"),
+        (~high, BLUE, "s", "Below-average state"),
+    ):
+        axes.scatter(
+            standardised[mask],
+            lagged[mask],
+            color=colour,
+            marker=marker,
+            s=58,
+            edgecolor=SURFACE,
+            linewidth=1.3,
+            zorder=3,
+            label=label,
+        )
+
+    slope, intercept = np.polyfit(standardised, lagged, 1)
+    grid = np.linspace(standardised.min() - 0.2, standardised.max() + 0.2, 20)
+    axes.plot(
+        grid, slope * grid + intercept,
+        color=INK, linewidth=1.6, zorder=2,
+    )
+
+    headline = measure["headline"]
+    axes.set_xlabel(
+        "State poverty headcount (standardised)", color=MUTED, fontsize=9
+    )
+    axes.legend(frameon=False, fontsize=9, labelcolor=MUTED, loc="upper left")
+    axes.set_title(
+        f"Moran's I = {headline.i:.3f}, the slope of this line "
+        f"(p = {headline.p_value:.4f}, the floor for "
+        f"{headline.permutations:,} permutations)",
+        color=INK,
+        fontsize=11.5,
+        loc="left",
+        pad=14,
+    )
+
+    return _save(figure, "13_moran_scatter.png")
+
+
+def build_statistical_figures(states: pd.DataFrame | None = None) -> list[Path]:
+    """The Phase 2 figures: intervals, diagnostics and space."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    if states is None:
+        states = load_states()
+
+    intervals = poverty_intervals(states)
+    model = poverty_model(states)
+    spatial_result = spatial_findings(states)
+
+    return [
+        figure_correlation_intervals(intervals),
+        figure_model_diagnostics(model),
+        figure_state_maps(states, spatial_result),
+        figure_moran_scatter(spatial_result),
+    ]
+
+
+def print_statistical_findings(states: pd.DataFrame | None = None) -> None:
+    """Print the Phase 2 numbers quoted in the report."""
+    if states is None:
+        states = load_states()
+
+    if "NGA_MPI_HEADCOUNT" not in states.columns:
+        print("STATISTICS: no MPI data loaded.")
+        return
+
+    intervals = poverty_intervals(states)
+    print("CORRELATION INTERVALS (95%)")
+    for label in ("pooled", "north", "south"):
+        row = intervals[label]
+        print(
+            f"  {label:<7} n={row['n']:<3} r={row['r']:+.3f}   "
+            f"bootstrap [{row['bootstrap_low']:+.3f}, "
+            f"{row['bootstrap_high']:+.3f}]   "
+            f"fisher [{row['fisher_low']:+.3f}, {row['fisher_high']:+.3f}]"
+            f"{'   includes zero' if row['includes_zero'] else ''}"
+        )
+
+    model = poverty_model(states)
+    print()
+    print(f"MODEL  {model['formula']}  (HC3 robust standard errors)")
+    for name, term in model["terms"].items():
+        print(
+            f"  {name:<18} {term['estimate']:+8.3f}  "
+            f"se {term['robust_se']:6.3f} (classical {term['classical_se']:.3f})"
+            f"  p={term['p']:.4f}  "
+            f"[{term['low']:+.3f}, {term['high']:+.3f}]"
+        )
+    print(
+        f"  southern slope {model['southern_slope']:+.3f} points of poverty "
+        "per dependant"
+    )
+    print(f"  northern slope {model['northern_slope']:+.3f}")
+    print(
+        f"  difference     {model['slope_difference']:+.3f} "
+        f"(p={model['slope_difference_p']:.4f})"
+    )
+    print(
+        f"  R2 {model['r_squared']:.3f}, adjusted {model['adjusted_r_squared']:.3f}"
+        f", Breusch-Pagan p={model['breusch_pagan_p']:.4f}"
+    )
+    print(
+        f"  influential states (Cook's D > {model['cooks_threshold']:.3f}): "
+        + (
+            ", ".join(
+                f"{row['state']} {row['cooks_d']:.2f}"
+                for _, row in model["influential"].iterrows()
+            )
+            or "none"
+        )
+    )
+    print(
+        f"  refit without them (n={model['refit_n']}): "
+        f"south {model['refit_southern_slope']:+.3f}, "
+        f"north {model['refit_northern_slope']:+.3f}, "
+        f"difference p={model['refit_difference_p']:.4f}"
+    )
+
+    spatial_result = spatial_findings(states)
+    print()
+    print(
+        f"SPATIAL AUTOCORRELATION (k={spatial_result['k']} nearest "
+        f"neighbours, {spatial_result['permutations']:,} permutations)"
+    )
+    for label, measure in spatial_result["measures"].items():
+        headline = measure["headline"]
+        print(
+            f"  {label:<10} I={headline.i:+.3f}  "
+            f"E[I]={headline.expected:+.3f}  "
+            f"z={headline.z_score:+.2f}  p={headline.p_value:.4f}"
+        )
+        across = "  ".join(
+            f"k={result.k}: {result.i:+.2f}" for result in measure["sensitivity"]
+        )
+        print(f"             across k -> {across}")
 
 if __name__ == "__main__":
     main()
